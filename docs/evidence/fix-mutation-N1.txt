@@ -1,0 +1,24 @@
+变异自证：N1
+文件：extensions/rdp/src/styles.css
+目标测试：test/fallbackInputs.test.js
+变异手法：把高级区容器改回与输入框同色（N1：框会看不见）
+替换：*/\n  background: var(--bg);\n}   =>   */\n  background: var(--bg-input);\n}
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 3
+ℹ pass 3
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ N1②：输入框底色不得与其容器的底色相同（N1 的直接回归点） (0.5611ms)
+ℹ tests 3
+ℹ pass 2
+ℹ fail 1
+✖ failing tests:
+✖ N1②：输入框底色不得与其容器的底色相同（N1 的直接回归点） (0.5611ms)
+  AssertionError [ERR_ASSERTION]: .accordion 的底色（--bg-input）与输入框底色（--bg-input）相同/同色 ⇒ 框会看不见（N1 就是这个问题）
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 3
+ℹ pass 3
+ℹ fail 0

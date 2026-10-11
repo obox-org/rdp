@@ -1,0 +1,33 @@
+﻿N1/N2/N3/N5 的运行时证据（无头 Chrome；纯兜底 token 状态，即宿主未推送）
+时间：2026-10-11  浏览器：C:\Program Files\Google\Chrome\Application\chrome.exe --headless=new
+被测页面：tmp/rdp-ui-shots/** 是 extensions/rdp/ui/ 的**副本**（只在副本 index.html 里注入了一小段
+          '打开模态框 / 展开高级选项 / 填网关地址 / 派发遮罩 mousedown + Esc' 的脚本；扩展源码未改）
+
+### N1 可读性（截图 + 断言）
+- tmp/rdp-ui-shots/accordion-text-input.png：高级区里的文本框（驱动器 / USB 重定向 / MTP-PTP / 摄像头）
+  在**仅兜底**状态下都是可见的浅底方框（--bg-input #3c3c3c 落在凹槽 --bg #1e1e1e 上），placeholder 与已填值可读；
+- tmp/rdp-ui-shots/modal-advanced-bottom.png、modal-gateway-n5.png：模态框整体（单列 + 每项一行说明 + 下拉框）
+- 断言（test/fallbackInputs.test.js）：输入框底色 != 任何容器底色（这次的 bug 就是两者同色）；
+  对比度经 WCAG 公式算得：正文/输入框底 6.87:1、正文/窗口底 10.43:1、placeholder/输入框底 2.16:1
+  （placeholder 用宿主 --fg-dim，按设计 §2.5 E6 保留；门禁只钉"不许更差"）
+
+### N2/N3/N4 选项文本（--dump-dom 抓到的真渲染结果，select 共 6 个、无 radio）
+  <option value="">留空（不写该键）</option>
+  <option title="连接时向用户询问网关密码（官方默认）。" value="0">0 — 询问密码（NTLM）</option>
+  <option title="用本机智能卡完成网关认证。" value="1">1 — 智能卡</option>
+  <option title="直接用当前 Windows 登录凭据。" value="2">2 — 当前登录用户凭据</option>
+  <option title="提示输入凭据并用基本认证发送。" value="3">3 — 提示输入凭据 + 基本认证</option>
+  <option title="连接时再由用户选择认证方式。" value="4">4 — 稍后由用户选择</option>
+  <option title="用 Cookie 完成网关认证。" value="5">5 — 基于 Cookie 认证</option>
+
+### N5 关闭路径（运行时 + 产物对照）
+  同一份 dump 的 <title>N5=open</title>：对 .overlay 派发 mousedown、对 window 派发 Escape keydown 之后，form.modal 仍在。
+  ⚠️ 这条运行时检查**不判别新旧**：同样的合成事件在整改前的旧包上也保持打开（见 fix-n5-bundle-diff.txt）。
+  真正的判别证据是产物对照：旧包 index-C1ClMszZ.js 里有 onMousedown("self") 与 key==="Escape"→emit(close)（各 x2），
+  新包 index-DDiHagXg.js 里两者 x0；源码门禁 test/componentSource.test.js 禁止它们回到源码。
+
+### M3 运行时可见性（同一份 dump，窗口模式 fullscreen=false）
+  含「窗口模式单显」：True；含其说明「退出全屏时是否只保留一个显示器」：True
+### M2 文案（同一份 dump）
+  含「验证失败时警告」：True；含旧文案「验证失败时警告（默认）」：False
+  含「未官方确认」角标文案：False

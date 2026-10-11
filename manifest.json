@@ -1,0 +1,19 @@
+{
+  "name": "rdp",
+  "version": "1.0.0",
+  "displayName": "远程桌面",
+  "author": "chenzhi",
+  "apiVersion": 1,
+  "description": "RDP 连接管理：卡片列表 / 新建 / 编辑 / 删除确认 / 打开（生成 .rdp 并经 cmdkey 预置凭据后拉起 mstsc.exe）",
+  "main": "./index.js",
+  "contributes": {
+    "ipcChannels": [
+      {
+        "id": "rdp.helper",
+        "transport": "stdio",
+        "program": "./helper.cjs",
+        "framing": "ndjson"
+      }
+    ]
+  }
+}

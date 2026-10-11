@@ -1,0 +1,349 @@
+<script setup>
+/**
+ * 远程桌面子应用主界面（设计 §3.9.1）。
+ * 结构：sticky header（56px）→ 卡片网格 / 空态 → 底部状态栏（40px）；模态框与删除确认挂在这里。
+ * 数据全部经 bridge.js 的 callExtension(method, payload) 走宿主消息桥，页面内没有 api 对象。
+ */
+import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
+import ConnectionCard from './components/ConnectionCard.vue'
+import ConnectionModal from './components/ConnectionModal.vue'
+import DeleteConfirm from './components/DeleteConfirm.vue'
+import EmptyState from './components/EmptyState.vue'
+import StatusBar from './components/StatusBar.vue'
+import { callExtension } from './bridge.js'
+import { titleOf, subtitleOf } from './fields.js'
+
+const rows = ref([])
+const loading = ref(true)
+
+const modalOpen = ref(false)
+const modalMode = ref('create')
+const modalRow = ref(null)
+const saving = ref(false)
+const saveError = ref('')
+
+const deleteRow = ref(null)
+const deleting = ref(false)
+
+const statusText = ref('')
+const statusKind = ref('info')
+const statusCollapsed = ref(false)
+
+/** id → { state: idle|opening|ok|error, error, showError } */
+const cardStates = ref({})
+const timers = new Map()
+
+const connectionsText = computed(() => `⟨${rows.value.length} 个连接⟩`)
+
+/** 打开模态框的触发元素，关闭后焦点回到它（§3.9.5） */
+let triggerEl = null
+const createButton = ref(null)
+
+function setStatus(kind, text) {
+  statusKind.value = kind
+  statusText.value = text
+}
+
+function stateOf(row) {
+  return cardStates.value[row.id] || { state: 'idle', error: '', showError: false }
+}
+
+function patchState(id, patch) {
+  cardStates.value = { ...cardStates.value, [id]: { ...stateOf({ id }), ...patch } }
+}
+
+function clearTimer(id) {
+  const timer = timers.get(id)
+  if (timer) {
+    clearTimeout(timer)
+    timers.delete(id)
+  }
+}
+
+function rememberTrigger() {
+  triggerEl = document.activeElement instanceof HTMLElement ? document.activeElement : null
+}
+
+function restoreFocus() {
+  nextTick(() => {
+    if (triggerEl && triggerEl.isConnected) triggerEl.focus()
+    else createButton.value?.focus()
+    triggerEl = null
+  })
+}
+
+/**
+ * 列表顺序：扩展的 `list` 按 `createdAt` 升序（最旧在前），界面按**最新在前**展示，
+ * 与「新建的卡片立刻插到列表顶部」（§3.9.2）保持一致。
+ */
+function newestFirst(rows) {
+  return [...rows].sort((a, b) => {
+    const ca = String(a?.createdAt ?? '')
+    const cb = String(b?.createdAt ?? '')
+    if (ca !== cb) return ca < cb ? 1 : -1
+    return Number(b?.id ?? 0) - Number(a?.id ?? 0)
+  })
+}
+
+async function refresh() {
+  loading.value = true
+  try {
+    const data = await callExtension('list', {})
+    rows.value = newestFirst(Array.isArray(data) ? data : [])
+    setStatus('info', `已加载 ${rows.value.length} 个连接`)
+  } catch (err) {
+    rows.value = []
+    setStatus('error', `读取连接列表失败：${err.message}`)
+  } finally {
+    loading.value = false
+  }
+}
+
+/**
+ * 静默对账：保存/删除这类乐观更新失败后，用扩展的真实数据回填（不改状态栏文案）。
+ * 例：扩展报「连接已保存，但密码未保存」——库行其实写进去了，本地回滚反而会与库不一致。
+ */
+async function reconcile() {
+  try {
+    const data = await callExtension('list', {})
+    rows.value = newestFirst(Array.isArray(data) ? data : [])
+  } catch {
+    /* 对账失败就保留本地回滚结果，状态栏已有错误原因 */
+  }
+}
+
+/** 扩展返回的 warnings（如「本机凭据未清理」）拼进状态栏文案 */
+function warningSuffix(data) {
+  const list = Array.isArray(data?.warnings) ? data.warnings.filter(Boolean) : []
+  return list.length > 0 ? `（${list.join('；')}）` : ''
+}
+
+function openCreate() {
+  rememberTrigger()
+  modalMode.value = 'create'
+  modalRow.value = null
+  saveError.value = ''
+  saving.value = false
+  modalOpen.value = true
+}
+
+function openEdit(row) {
+  rememberTrigger()
+  modalMode.value = 'edit'
+  modalRow.value = row
+  saveError.value = ''
+  saving.value = false
+  modalOpen.value = true
+}
+
+function closeModal() {
+  modalOpen.value = false
+  modalRow.value = null
+  restoreFocus()
+}
+
+/** 保存返回值的兼容处理：对象（行）取其内容，数字/字符串在新建时当作新 id */
+function mergeSaved(saved, payload, previousId) {
+  const safe = stripPassword(payload)
+  if (saved && typeof saved === 'object') {
+    return { ...safe, ...saved, id: saved.id ?? previousId ?? safe.id }
+  }
+  if (!previousId && (typeof saved === 'number' || typeof saved === 'string') && saved !== '') {
+    return { ...safe, id: saved }
+  }
+  return { ...safe, id: previousId ?? safe.id }
+}
+
+/** 密码只走扩展的 api.secrets，绝不留在页面状态里 */
+function stripPassword(payload) {
+  const safe = { ...payload }
+  delete safe.password
+  return safe
+}
+
+async function saveConnection(payload) {
+  saving.value = true
+  saveError.value = ''
+  const isEdit = payload.id !== undefined && payload.id !== null && payload.id !== ''
+  const tempId = `temp-${Date.now()}`
+  const index = isEdit ? rows.value.findIndex((row) => String(row.id) === String(payload.id)) : -1
+  const backup = index >= 0 ? rows.value[index] : null
+  const safe = stripPassword(payload)
+
+  // 乐观更新：先把卡片放上去（新建插到顶部），失败再回滚
+  if (isEdit && index >= 0) rows.value.splice(index, 1, { ...backup, ...safe, id: payload.id })
+  else if (!isEdit) rows.value.unshift({ ...safe, id: tempId })
+
+  try {
+    const saved = await callExtension('save', payload)
+    const record = mergeSaved(saved, payload, isEdit ? payload.id : null)
+    if (isEdit) {
+      const at = rows.value.findIndex((row) => String(row.id) === String(payload.id))
+      if (at >= 0) rows.value.splice(at, 1, record)
+      else rows.value.unshift(record)
+    } else {
+      const at = rows.value.findIndex((row) => String(row.id) === String(tempId))
+      if (at >= 0) rows.value.splice(at, 1, record)
+    }
+    setStatus('ok', isEdit ? `已更新连接 ${titleOf(record)}` : `已新建连接 ${titleOf(record)}`)
+    closeModal()
+  } catch (err) {
+    // 回滚乐观更新
+    if (isEdit) {
+      const at = rows.value.findIndex((row) => String(row.id) === String(payload.id))
+      if (at >= 0) {
+        if (backup) rows.value.splice(at, 1, backup)
+        else rows.value.splice(at, 1)
+      }
+    } else {
+      const at = rows.value.findIndex((row) => String(row.id) === String(tempId))
+      if (at >= 0) rows.value.splice(at, 1)
+    }
+    saveError.value = err.message
+    setStatus('error', `保存失败：${err.message}`)
+    // 回滚后与扩展对账：扩展可能已写库（如「连接已保存，但密码未保存」），不能只信本地回滚
+    await reconcile()
+  } finally {
+    saving.value = false
+  }
+}
+
+function openConnection(row) {
+  const id = row.id
+  clearTimer(id)
+  patchState(id, { state: 'opening', error: '', showError: false })
+  callExtension('open', { id })
+    .then((data) => {
+      const pid = data && typeof data === 'object' ? data.pid : data
+      patchState(id, { state: 'ok', error: '', showError: false })
+      setStatus(
+        'ok',
+        `已打开 ${titleOf(row)}${pid ? `（mstsc pid ${pid}）` : ''}${warningSuffix(data)} · Windows 安全框里本地资源默认全不勾（剪贴板等），需要就勾上`
+      )
+      // 成功绿保留 2s 再回灰
+      timers.set(
+        id,
+        setTimeout(() => {
+          timers.delete(id)
+          patchState(id, { state: 'idle', error: '', showError: false })
+        }, 2000)
+      )
+    })
+    .catch((err) => {
+      patchState(id, { state: 'error', error: err.message, showError: false })
+      setStatus('error', `打开 ${titleOf(row)} 失败：${err.message}`)
+    })
+}
+
+function askDelete(row) {
+  rememberTrigger()
+  deleteRow.value = row
+}
+
+function closeDelete() {
+  deleteRow.value = null
+  restoreFocus()
+}
+
+async function confirmDelete() {
+  const row = deleteRow.value
+  if (!row) return
+  const id = row.id
+  deleting.value = true
+  const index = rows.value.findIndex((item) => String(item.id) === String(id))
+  const backup = index >= 0 ? rows.value[index] : null
+  if (index >= 0) rows.value.splice(index, 1)
+  try {
+    const result = await callExtension('remove', { id })
+    clearTimer(id)
+    setStatus('ok', `已删除 ${titleOf(row)}，并清理本机保存的凭据${warningSuffix(result)}`)
+  } catch (err) {
+    if (backup && index >= 0) rows.value.splice(index, 0, backup)
+    setStatus('error', `删除 ${titleOf(row)} 失败：${err.message}`)
+    await reconcile()
+  } finally {
+    deleting.value = false
+    deleteRow.value = null
+    restoreFocus()
+  }
+}
+
+function toggleCardError(row) {
+  const current = stateOf(row)
+  patchState(row.id, { showError: !current.showError })
+}
+
+onBeforeUnmount(() => {
+  for (const timer of timers.values()) clearTimeout(timer)
+  timers.clear()
+})
+
+refresh()
+</script>
+
+<template>
+  <div class="app">
+    <header class="app__header">
+      <div class="app__title">
+        <h1 class="app__heading">远程桌面</h1>
+        <span class="badge">{{ connectionsText }}</span>
+      </div>
+      <button
+        ref="createButton"
+        type="button"
+        class="btn btn--primary"
+        aria-label="新建连接"
+        @click="openCreate"
+      >
+        ＋ 新建连接
+      </button>
+    </header>
+
+    <main class="app__content">
+      <p v-if="loading" class="app__loading">正在加载连接…</p>
+      <EmptyState v-else-if="rows.length === 0" @create="openCreate" />
+      <div v-else class="app__grid">
+        <ConnectionCard
+          v-for="row in rows"
+          :key="row.id"
+          :row="row"
+          :title="titleOf(row)"
+          :subtitle="subtitleOf(row)"
+          :state="stateOf(row).state"
+          :error="stateOf(row).error"
+          :show-error="stateOf(row).showError"
+          @open="openConnection(row)"
+          @edit="openEdit(row)"
+          @delete="askDelete(row)"
+          @toggle-error="toggleCardError(row)"
+        />
+      </div>
+    </main>
+
+    <StatusBar
+      :text="statusText"
+      :kind="statusKind"
+      :collapsed="statusCollapsed"
+      @toggle="statusCollapsed = !statusCollapsed"
+    />
+
+    <ConnectionModal
+      v-if="modalOpen"
+      :mode="modalMode"
+      :row="modalRow"
+      :rows="rows"
+      :submitting="saving"
+      :error="saveError"
+      @close="closeModal"
+      @save="saveConnection"
+    />
+
+    <DeleteConfirm
+      v-if="deleteRow"
+      :title="titleOf(deleteRow)"
+      :submitting="deleting"
+      @close="closeDelete"
+      @confirm="confirmDelete"
+    />
+  </div>
+</template>

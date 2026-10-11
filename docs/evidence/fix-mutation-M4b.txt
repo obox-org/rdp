@@ -1,0 +1,29 @@
+变异自证：M4b
+文件：extensions/rdp/src/fields.js
+目标测试：test/fieldDocs.test.js
+变异手法：把"留空"空值态混进官方枚举里（取值计数与"空值态不走 options"的口径应立刻变红）
+替换：const GATEWAY_CREDENTIALS = [\n  { value: 0,   =>   const GATEWAY_CREDENTIALS = [\n  { value: '', label: '留空（不写该键）', desc: '不写该键。' },\n  { value: 0,
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 7
+ℹ pass 7
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ 每个 select 的每个官方取值都有 label + desc（覆盖率 26/26、6 个字段） (0.509ms)
+✖ 选项文本不重复取值（label 不得以取值数字开头，否则会显示成 "32 — 32 位"） (0.4009ms)
+✖ optional 字段的"空值态"不走 options（留空选项由组件渲染，不计入官方取值） (0.209ms)
+✖ 待确认清单与官方确证登记表一致（本次已全部确证 ⇒ 清单为空） (0.7156ms)
+ℹ tests 7
+ℹ pass 3
+ℹ fail 4
+✖ failing tests:
+✖ 每个 select 的每个官方取值都有 label + desc（覆盖率 26/26、6 个字段） (0.509ms)
+  AssertionError [ERR_ASSERTION]: 官方取值总数应为 26（3+4+4+4+5+6）
+✖ 选项文本不重复取值（label 不得以取值数字开头，否则会显示成 "32 — 32 位"） (0.4009ms)
+  AssertionError [ERR_ASSERTION]: 选项文本已经是 `取值 — label`，label 里不要再写一遍取值
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 7
+ℹ pass 7
+ℹ fail 0

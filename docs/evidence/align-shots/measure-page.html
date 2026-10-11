@@ -1,0 +1,291 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="color-scheme" content="dark" />
+    <title>远程桌面</title>
+    <script type="module" crossorigin src="./assets/index-BHaCIB5u.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/style-BBegKGh9.css" />
+  </head>
+  <body>
+    <div id="app"></div>
+    <!--
+      evidence-only injection：**不改扩展源码**。这份 index.html 只是 extensions/rdp/ui/index.html 的副本，
+      额外做两件事：① 打开"新建连接"模态框（可再展开"高级选项"，视 ?advanced=1）；② 量出每一行
+      "标签左边缘 / 控件左边缘 / 说明左边缘 / 控件列右边缘"，把 JSON 打进 <pre id="measure">，
+      供截图之外的机器核对（截图在 docs/evidence/align-modal-*.png）。
+    -->
+    <pre id="measure" hidden></pre>
+    <script>
+      ;(function () {
+        var ADVANCED = /(?:^|[?&])advanced=1/.test(location.search)
+        // 仅用于**截图**：把整页缩放一档，让展开高级区后的长模态框一屏拍完（不改扩展源码；所有行
+        // 同比缩放，对齐关系不变）。`?zoom=0.92` 之类的取值；不传则不缩放。
+        var ZOOM = parseFloat(
+          (location.search.match(/[?&]zoom=([0-9.]+)/) || [])[1] || '0'
+        )
+        if (ZOOM > 0 && ZOOM < 1) document.documentElement.style.zoom = String(ZOOM)
+
+        function round(n) {
+          return Math.round(n * 100) / 100
+        }
+
+        /** 某元素里那段文字在**单行不换行**下的渲染宽度（用与它同字体的探针量） */
+        function singleLineWidth(el) {
+          var cs = getComputedStyle(el)
+          var probe = document.createElement('span')
+          probe.style.position = 'fixed'
+          probe.style.left = '-10000px'
+          probe.style.top = '0'
+          probe.style.whiteSpace = 'pre'
+          probe.style.fontSize = cs.fontSize
+          probe.style.fontFamily = cs.fontFamily
+          probe.textContent = el.textContent.trim()
+          document.body.appendChild(probe)
+          var w = probe.getBoundingClientRect().width
+          probe.remove()
+          return round(w)
+        }
+
+        function measure() {
+          var modal = document.querySelector('.modal')
+          if (!modal) return null
+          var modalRect = modal.getBoundingClientRect()
+          var body = document.querySelector('.modal__body')
+          var rows = [].slice.call(document.querySelectorAll('.field'))
+          var out = {
+            viewport: { w: window.innerWidth, h: window.innerHeight },
+            modal: {
+              width: round(modalRect.width),
+              scrollHeight: body ? round(body.scrollHeight) : null,
+              clientHeight: body ? round(body.clientHeight) : null,
+              horizontalOverflow: body ? body.scrollWidth - body.clientWidth : null
+            },
+            docScrollWidth: document.documentElement.scrollWidth,
+            docClientWidth: document.documentElement.clientWidth,
+            advancedOpen: !!document.querySelector('.accordion__toggle[aria-expanded="true"]'),
+            fields: []
+          }
+          var controlXs = []
+          var labelXs = []
+          var descXs = []
+          var descForCheckbox = []
+          var pairXs = []
+          var pairMisaligned = []
+          var descMisaligned = []
+          var descWrapping = []
+          var controlOverflow = []
+          var labelOverflow = []
+          var visible = []
+          rows.forEach(function (row) {
+            var label = row.querySelector('.field__label')
+            var control = row.querySelector('.field__control')
+            var desc = row.querySelector('.field__desc, .field__hint')
+            var check = row.querySelector('.check')
+            var input = row.querySelector('input, select')
+            var pair = row.querySelector('.pair')
+            var pairInputs = pair ? [].slice.call(pair.querySelectorAll('input')) : []
+            var isCheck = !!check
+            var text = isCheck ? check.textContent.trim() : label ? label.textContent.trim() : ''
+            var labelRect = label ? label.getBoundingClientRect() : null
+            var controlRect = control ? control.getBoundingClientRect() : null
+            // 隐藏字段（v-show 关闭或可见性过滤后的残留）宽高为 0，不参与对齐统计
+            var shown = !!controlRect && controlRect.width > 0
+            var item = {
+              label: text,
+              checkbox: isCheck,
+              shown: shown,
+              scope: row.closest('.accordion__body') ? 'advanced' : 'common',
+              labelX: labelRect ? round(labelRect.left) : null,
+              labelW: labelRect ? round(labelRect.width) : null,
+              controlX: controlRect ? round(controlRect.left) : null,
+              controlW: controlRect ? round(controlRect.width) : null,
+              inputX: input ? round(input.getBoundingClientRect().left) : null,
+              pairXs: pairInputs.map(function (i) {
+                return round(i.getBoundingClientRect().left)
+              }),
+              descX: desc ? round(desc.getBoundingClientRect().left) : null,
+              descLines: desc
+                ? round(
+                    desc.getBoundingClientRect().height / parseFloat(getComputedStyle(desc).lineHeight)
+                  )
+                : 0,
+              // 说明文本的**单行渲染宽度**：把同一段文字放进"不换行"的探针里量。
+              // 它才是"会不会折行"的判据——desc 自身的宽度恒等于列宽，量它没有意义。
+              descTextW: desc ? singleLineWidth(desc) : null,
+              descText: desc ? desc.textContent.trim() : '',
+              overflowX: control ? control.scrollWidth - control.clientWidth : null
+            }
+            out.fields.push(item)
+            if (!shown) return
+            visible.push(item)
+            controlXs.push(item.controlX)
+            if (item.labelX !== null && text) labelXs.push(item.labelX)
+            if (item.descX !== null) {
+              descXs.push(item.descX)
+              if (isCheck) descForCheckbox.push(item.descX)
+              if (item.descX !== item.controlX) descMisaligned.push(item.label)
+              if (item.descLines > 1) descWrapping.push(item)
+            }
+            if (item.pairXs.length === 2) {
+              pairXs.push(item.pairXs)
+              if (item.pairXs[0] !== item.controlX) pairMisaligned.push(item.label)
+            }
+            if (item.overflowX > 0) controlOverflow.push(item.label)
+            if (item.labelW > 144) labelOverflow.push(item.label)
+          })
+          function uniq(list) {
+            // 注意：这里必须用 Array.from —— `[].slice.call(set)` 对 Set 返回空数组（长度 0）
+            return Array.from(new Set(list)).sort(function (a, b) {
+              return a - b
+            })
+          }
+          var controlX0 = uniq(controlXs)[0]
+          out.summary = {
+            fieldCount: out.fields.length,
+            visibleFieldCount: visible.length,
+            visibleCommonCount: visible.filter(function (f) {
+              return f.scope === 'common'
+            }).length,
+            visibleAdvancedCount: visible.filter(function (f) {
+              return f.scope === 'advanced'
+            }).length,
+            checkboxCount: visible.filter(function (f) {
+              return f.checkbox
+            }).length,
+            // 理想结果：两者都只有**一个**不同值（所有标签一条竖线、所有控件一条竖线）
+            distinctLabelX: uniq(labelXs),
+            distinctControlX: uniq(controlXs),
+            distinctDescX: uniq(descXs),
+            distinctDescXForCheckbox: uniq(descForCheckbox),
+            // 按"每个折叠区各自成一组"看（常用区与高级区的行宽不同，跨区只要**各自**内部对齐）
+            commonControlX: uniq(
+              visible
+                .filter(function (f) {
+                  return f.scope === 'common'
+                })
+                .map(function (f) {
+                  return f.controlX
+                })
+            ),
+            advancedControlX: uniq(
+              visible
+                .filter(function (f) {
+                  return f.scope === 'advanced'
+                })
+                .map(function (f) {
+                  return f.controlX
+                })
+            ),
+            commonLabelX: uniq(
+              visible
+                .filter(function (f) {
+                  return f.scope === 'common' && f.labelW > 0
+                })
+                .map(function (f) {
+                  return f.labelX
+                })
+            ),
+            advancedLabelX: uniq(
+              visible
+                .filter(function (f) {
+                  return f.scope === 'advanced' && f.labelW > 0
+                })
+                .map(function (f) {
+                  return f.labelX
+                })
+            ),
+            pairCount: pairXs.length,
+            pairMisaligned: pairMisaligned,
+            // 说明行必须与控件左边缘对齐
+            descMisaligned: descMisaligned,
+            // 说明必须落在"本区的控件列起点"上（不是标签列下方）
+            descNotInControlColumn: visible
+              .filter(function (f) {
+                return f.descX !== null && f.descX !== f.controlX
+              })
+              .map(function (f) {
+                return f.label
+              }),
+            descMultiLine: out.descMultiLineLabels || [],
+            controlOverflow: controlOverflow,
+            labelWiderThanColumn: labelOverflow,
+            controlColumnWidth: uniq(
+              visible.map(function (f) {
+                return f.controlW
+              })
+            ),
+            controlX0: controlX0,
+            // 「说明行必须只有一行」的判据：折行的字段 + 各自单行渲染宽度 / 控件列宽
+            descLineCountDist: uniq(
+              visible.map(function (f) {
+                return f.descLines
+              })
+            ),
+            descWrapping: descWrapping
+              .map(function (f) {
+                return {
+                  scope: f.scope,
+                  label: f.label,
+                  descX: f.descText,
+                  textW: f.descTextW,
+                  controlW: f.controlW,
+                  over: round(f.descTextW - f.controlW),
+                  lines: f.descLines
+                }
+              })
+              .sort(function (a, b) {
+                return b.over - a.over
+              }),
+            descWidestThree: visible
+              .filter(function (f) {
+                return f.descTextW !== null
+              })
+              .map(function (f) {
+                return { scope: f.scope, label: f.label, textW: f.descTextW, controlW: f.controlW }
+              })
+              .sort(function (a, b) {
+                return b.textW - a.textW
+              })
+              .slice(0, 3)
+          }
+          return out
+        }
+
+        function report(tag) {
+          var data = measure()
+          var pre = document.getElementById('measure')
+          pre.textContent = 'MEASURE[' + tag + ']=' + JSON.stringify(data, null, 2)
+          document.title = 'MEASURE_DONE_' + tag
+          return data
+        }
+
+        var step = 0
+        var timer = setInterval(function () {
+          step += 1
+          if (step > 60) {
+            clearInterval(timer)
+            report('timeout')
+            return
+          }
+          if (!document.querySelector('.modal')) {
+            var create = document.querySelector('button[aria-label="新建连接"]')
+            if (create) create.click()
+            return
+          }
+          if (ADVANCED && !document.querySelector('.accordion__toggle[aria-expanded="true"]')) {
+            var toggle = document.querySelector('.accordion__toggle')
+            if (toggle) toggle.click()
+            return
+          }
+          clearInterval(timer)
+          // 展开高级区后等一帧再量（v-show 切换后布局才稳定）
+          setTimeout(function () {
+            report(ADVANCED ? 'advanced' : 'common')
+          }, 300)
+        }, 150)
+      })()
+    </script>
+  </body>
+</html>

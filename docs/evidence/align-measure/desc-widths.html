@@ -1,0 +1,116 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>全部 desc 的实测宽度 / 估算宽度对照</title>
+    <style>
+      :root {
+        --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+          'PingFang SC', sans-serif;
+      }
+      body {
+        margin: 0;
+        background: #1e1e1e;
+        color: #ccc;
+        font-family: var(--font-family);
+      }
+      #probe {
+        position: fixed;
+        left: -10000px;
+        top: 0;
+        white-space: pre;
+        font-size: 12px;
+      }
+      #out {
+        font-size: 12px;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="probe"></div>
+    <pre id="out"></pre>
+    <script type="module">
+      import { COMMON_GROUPS, ADVANCED_GROUPS } from './fields.js'
+
+      const probe = document.getElementById('probe')
+
+      /** 与 test/formAlign.test.js 同一套"字体上界"口径（全角 1.15em / 其余 0.8em） */
+      const WIDE =
+        /[\u1100-\u115f\u2e80-\u303f\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/
+      function upper(text) {
+        let em = 0
+        for (const ch of text) em += WIDE.test(ch) ? 1.15 : 0.8
+        return em * 12
+      }
+
+      /** 真实渲染宽度（同字体、不换行的探针） */
+      function measured(text) {
+        probe.textContent = text
+        return Math.round(probe.getBoundingClientRect().width * 100) / 100
+      }
+
+      /** 真实折行判定：把文字放进真实容器（同字体、宽度=控件列宽、行高 1.5）量行数 */
+      function lines(text, controlW) {
+        const box = document.createElement('p')
+        box.style.cssText =
+          'position:fixed;left:-10000px;top:0;margin:0;width:' +
+          controlW +
+          'px;font-size:12px;font-family:inherit;line-height:1.5;'
+        box.textContent = text
+        document.body.appendChild(box)
+        const height = box.getBoundingClientRect().height
+        box.remove()
+        return Math.round(height / (12 * 1.5))
+      }
+
+      const COMMON_W = 446
+      const ADVANCED_W = 420
+
+      const rows = []
+      for (const group of [...COMMON_GROUPS, ...ADVANCED_GROUPS]) {
+        const advanced = ADVANCED_GROUPS.includes(group)
+        for (const field of group.fields) {
+          const text = String(field.hint || field.desc || '').trim()
+          if (!text) continue
+          const controlW = advanced ? ADVANCED_W : COMMON_W
+          rows.push({
+            key: field.key,
+            scope: advanced ? 'advanced' : 'common',
+            text,
+            controlW,
+            measured: measured(text),
+            upper: Math.round(upper(text) * 100) / 100,
+            lines: lines(text, controlW)
+          })
+        }
+      }
+      rows.sort((a, b) => b.measured - a.measured)
+
+      const f = (n, w) => String(n).padStart(w)
+      const out = []
+      out.push('# 全部 ' + rows.length + ' 条 desc 的实测宽度 / 估算宽度 / 真实折行数')
+      out.push('# 探针字体 = 宿主 --font-family（12px = --font-size-sm）；行数按真实容器（宽=控件列宽）量')
+      out.push('# 控件列宽：常用区 ' + COMMON_W + 'px、高级区 ' + ADVANCED_W + 'px（1280 窗口宽的实测值）')
+      out.push('')
+      out.push('  行数   实测px   估算px  估算/实测  控件列  字段 (key)')
+      for (const r of rows) {
+        out.push(
+          `   ${r.lines}   ${f(r.measured, 7)}  ${f(r.upper, 7)}   ${f((r.upper / r.measured).toFixed(2), 8)}  ${f(r.controlW, 5)}   ${r.key}`
+        )
+      }
+      out.push('')
+      const wrapping = rows.filter((r) => r.lines > 1)
+      out.push('折行（>1 行）的字段：' + (wrapping.length ? wrapping.map((r) => r.key).join(', ') : '（无）'))
+      out.push('实测最大值 = ' + rows[0].measured + 'px (' + rows[0].key + ')，控件列 ' + rows[0].controlW + 'px')
+      out.push(
+        '估算/实测 比值范围 = ' +
+          Math.min(...rows.map((r) => r.upper / r.measured)).toFixed(2) +
+          ' ~ ' +
+          Math.max(...rows.map((r) => r.upper / r.measured)).toFixed(2)
+      )
+      document.getElementById('out').textContent = out.join('\n')
+      document.title = 'DONE'
+    </script>
+  </body>
+</html>

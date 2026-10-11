@@ -1,0 +1,24 @@
+变异自证：M4a
+文件：extensions/rdp/src/components/ConnectionField.vue
+目标测试：test/componentSource.test.js
+变异手法：下拉框的"留空"不再原样传 ""（Number("") 会变成合法取值 0）
+替换：change(props.field.key, raw === '' ? '' : Number(raw))   =>   change(props.field.key, Number(raw))
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ N2/N3/N4：多选一只有 select，取值说明进 option 文本，且不再有逐项说明行 (0.3058ms)
+ℹ tests 4
+ℹ pass 3
+ℹ fail 1
+✖ failing tests:
+✖ N2/N3/N4：多选一只有 select，取值说明进 option 文本，且不再有逐项说明行 (0.3058ms)
+  AssertionError [ERR_ASSERTION]: 空值选项必须传 ""，不能 Number("") 变成合法的 0
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0

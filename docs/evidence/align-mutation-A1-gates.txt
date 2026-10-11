@@ -1,0 +1,98 @@
+# 「表单对齐」门禁变异自证（A1 系列）
+# 时间：2026-10-11T14:46:53.981Z
+# 手法：每处变异只改一处字面（见 scripts/mutate-align-gates.mjs 的 MUTATIONS 表），
+#       跑 test/formAlign.test.js 记录"哪条门禁变红"，随后按字节还原并复跑确认全绿。
+
+## 基线（未变异）：全绿 ✔
+
+## A1-10 把「密码」的 desc 改回原长句（1280 下会折两行）
+  变异：desc: '只交本机凭据管理器（cmdkey），不写 .rdp / 不入库，清空即删除。'
+     → desc: '只交本机凭据管理器（cmdkey），不写 .rdp、不入库；编辑时清空即删除已存密码。'
+  变异后：红 ✔
+  变红的门禁含 A1⑧：是 ✔
+  变红用例：A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管） | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-1 把标签列固定宽度改回内容驱动（auto）
+  变异：grid-template-columns: var(--label-w) minmax(0, 1fr);
+     → grid-template-columns: auto minmax(0, 1fr);
+  变异后：红 ✔
+  变红的门禁含 A1①：是 ✔
+  变红用例：A1①：标签列是**固定宽度**（--label-w），且不是 auto / max-content / fit-content | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管） | A1①：标签列是**固定宽度**（--label-w），且不是 auto / max-content / fit-content | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-2 把标签列宽度改成 max-content（宽度随文字长短变化）
+  变异：--label-w: 144px;
+     → --label-w: max-content;
+  变异后：红 ✔
+  变红的门禁含 A1①：是 ✔
+  变红用例：A1①：标签列是**固定宽度**（--label-w），且不是 auto / max-content / fit-content | A1②：--label-w 放得下 fields.js 里最长的标签（1280 窗口下不折行、不溢出） | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管） | A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动） | A1①：标签列是**固定宽度**（--label-w），且不是 auto / max-content / fit-content | A1②：--label-w 放得下 fields.js 里最长的标签（1280 窗口下不折行、不溢出） | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管） | A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-3 把 --label-w 调小到放不下最长标签（120px）
+  变异：--label-w: 144px;
+     → --label-w: 120px;
+  变异后：红 ✔
+  变红的门禁含 A1②：是 ✔
+  变红用例：A1②：--label-w 放得下 fields.js 里最长的标签（1280 窗口下不折行、不溢出） | A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动） | A1②：--label-w 放得下 fields.js 里最长的标签（1280 窗口下不折行、不溢出） | A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-4 去掉标签列的左对齐（justify-self: start → end）
+  变异：  justify-self: start; ⏎   text-align: left; ⏎   color: var(--fg-dim);
+     →   justify-self: end; ⏎   text-align: left; ⏎   color: var(--fg-dim);
+  变异后：红 ✔
+  变红的门禁含 A1③：是 ✔
+  变红用例：A1③：标签与控件列都**左对齐** | A1③：标签与控件列都**左对齐**
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-5 把控件列改成不展开（justify-self: stretch → end）
+  变异：  justify-self: stretch; ⏎   text-align: left; ⏎   min-width: 0; ⏎ }
+     →   justify-self: end; ⏎   text-align: left; ⏎   min-width: 0; ⏎ }
+  变异后：红 ✔
+  变红的门禁含 A1③：是 ✔
+  变红用例：A1③：标签与控件列都**左对齐** | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管） | A1③：标签与控件列都**左对齐** | A1⑧：1280 宽窗口下**没有任何 desc 折行**（说明行恒为一行；窄窗口降级下允许折行，本门禁不管）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-6 把说明行挪出控件列（grid-column: 2 → 1）
+  变异：.field__desc, ⏎ .field__hint { ⏎   grid-column: 2;
+     → .field__desc, ⏎ .field__hint { ⏎   grid-column: 1;
+  变异后：红 ✔
+  变红的门禁含 A1④：是 ✔
+  变红用例：A1④：说明行在**控件列内**（grid-column: 2），不跨到标签列下方 | A1④：说明行在**控件列内**（grid-column: 2），不跨到标签列下方
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-7 把勾选框搬回标签列（去掉空占位、方框直接落在第 1 列）
+  变异：      <span class="field__label field__label--empty" aria-hidden="true"></span> ⏎       <div class="field__control">
+     →       <label class="check" :for="inputId"><input :id="inputId" type="checkbox" /></label> ⏎       <div class="field__control">
+  变异后：红 ✔
+  变红的门禁含 A1⑤：是 ✔
+  变红用例：A1⑤：勾选框落在控件列、成对字段的两个输入框在控件列内左对齐 | A1⑤：勾选框落在控件列、成对字段的两个输入框在控件列内左对齐
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-8 拆掉窄窗口降级（删掉 568px 那条媒体查询的栅格覆盖）
+  变异：@media (max-width: 568px) { ⏎   .field { ⏎     grid-template-columns: minmax(0, 1fr); ⏎   }
+     → @media (max-width: 568px) { ⏎   .field { ⏎     grid-template-columns: var(--label-w) minmax(0, 1fr); ⏎   }
+  变异后：红 ✔
+  变红的门禁含 A1⑥：是 ✔
+  变红用例：A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动） | A1⑥：窄窗口降级规则存在（标签/控件改上下堆叠，且不出现横向滚动）
+  还原后：全绿 ✔
+  判定：PASS
+
+## A1-9 把嵌套栅格加回来（.field__row 包住标签与控件，控件列会塌成 0）
+  变异：  <div class="field" :class="{ 'field--full': field.full }"> ⏎ 
+     →   <div class="field" :class="{ 'field--full': field.full }"> ⏎     <div class="field__row"> ⏎ 
+  变异后：红 ✔
+  变红的门禁含 A1⑦：是 ✔
+  变红用例：A1⑦：标签与控件必须是 `.field` 的**直接子元素**（不得再套一层嵌套栅格） | A1⑦：标签与控件必须是 `.field` 的**直接子元素**（不得再套一层嵌套栅格）
+  还原后：全绿 ✔
+  判定：PASS
+
+## 总判定：全部变异均被拦住且还原后全绿 ✔

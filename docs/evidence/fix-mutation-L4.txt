@@ -1,0 +1,24 @@
+变异自证：L4
+文件：extensions/rdp/src/theme.js
+目标测试：test/themeBridge.test.js
+变异手法：去掉定时器的"触发即出账"记账（旧 clearTimers 会把已触发的也再取消一遍）
+替换：      // 一触发就出账：这样 dispose()/收到推送时只去取消"还没跑到的"那些\n      pending = pending.filter((item) => item !== timer)\n   =>         // (mutated: 去掉"触发即出账")\n
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 11
+ℹ pass 11
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ L4：clearTimers 的记账——只取消"还没触发"的定时器，已触发的不再重复取消 (0.6838ms)
+ℹ tests 11
+ℹ pass 10
+ℹ fail 1
+✖ failing tests:
+✖ L4：clearTimers 的记账——只取消"还没触发"的定时器，已触发的不再重复取消 (0.6838ms)
+  AssertionError [ERR_ASSERTION]: dispose 不得取消已经触发过的定时器（旧的 clearTimers 会）
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 11
+ℹ pass 11
+ℹ fail 0

@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>desc 单行量测夹具</title>
+    <style>
+      /* 与扩展页面同源：字体族来自宿主 token 的兜底值（src/theme.js），字号 12px（--font-size-sm） */
+      :root {
+        --font-family:
+          -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC',
+          sans-serif;
+        font-family: var(--font-family);
+      }
+      body {
+        margin: 0;
+        font-family: var(--font-family);
+      }
+      #out {
+        font-size: 12px;
+        white-space: pre;
+      }
+      /* 舞台：宽度给足，让 `.modal { width: 640px }` 真正生效（不被 `max-width: 100%` 压窄）。
+         骨架用**真实的 `.overlay`** 包住 `.modal`，并把它的 `position: fixed` 改成 relative
+         （否则它会按**视口**而不是按舞台宽布局，量出来的列宽就不是 1280 窗口下的那一档）。 */
+      #stage {
+        width: 1280px;
+      }
+      #stage .overlay {
+        position: relative;
+        inset: auto;
+        display: flex;
+        align-items: flex-start;
+        justify-content: center;
+      }
+      #stage .modal {
+        flex: 0 0 auto;
+        max-height: none;
+        width: 640px; /* 与 .modal 的 width 一致（1280 窗口下不被 max-width:100% 压窄的那一档） */
+      }
+    </style>
+    <!--
+      由 test/descLinesBrowser.mjs 注入：从 src/styles.css **原样抽出**的、影响控件列宽的基础规则
+      （.modal / .modal__body / .field / .field__label / .field__control / .accordion__body /
+      .field__label--empty）。夹具不自己写宽度常量 —— CSS 一改，这里量出的列宽就跟着变。
+    -->
+    <style id="width-rules">
+      __RDP_WIDTH_CSS__
+    </style>
+  </head>
+  <body>
+    <pre id="out">MEASURING</pre>
+
+    <!-- 「舞台」：一段**最小但真实**的骨架，用真实规则让浏览器自己算出两个区的控件列宽 -->
+    <div id="stage">
+      <div class="overlay">
+        <div class="modal">
+          <div class="modal__body">
+            <div class="field">
+              <label class="field__label">宽</label>
+              <div class="field__control" id="probe-common"></div>
+            </div>
+            <div class="accordion__body">
+              <div class="field">
+                <label class="field__label">宽</label>
+                <div class="field__control" id="probe-advanced"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script id="payload" type="application/json">
+      __RDP_DESC_ROWS__
+    </script>
+    <script>
+      /**
+       * 供 test/formAlign.test.js 的 A1⑧ 调用（无头 Chrome `--dump-dom` 读 <pre id="out"> 的 JSON）。
+       *
+       * 为什么必须**真实排版**而不是字符宽度估算：宿主字体栈上估算会高估 15%–47%
+       * （实测对照见 docs/evidence/align-measure/desc-widths.txt），用它做门禁会大规模误报
+       * （65 条里误报 11 条）。
+       *
+       * 两个口径都由**浏览器**给出，夹具与测试里都没有手算常量：
+       *   · 控件列宽 = 用真实 CSS 规则渲染的上面的骨架 `.field__control` 的实际宽度；
+       *   · 是否折行 = 把说明文字放进同宽、同字体、同行高的真实容器里量行数。
+       * `?w=<px>` 可把两个区强制成同一宽度，用于自检"这套量法真的能测出折行"。
+       */
+      ;(function () {
+        var LINE_HEIGHT = 1.5
+        var FONT_SIZE = 12
+
+        function boxLines(text, controlW) {
+          var box = document.createElement('p')
+          box.style.cssText =
+            'position:fixed;left:-10000px;top:0;margin:0;padding:0;border:0;' +
+            'font-family:inherit;font-size:' +
+            FONT_SIZE +
+            'px;line-height:' +
+            LINE_HEIGHT +
+            ';width:' +
+            controlW +
+            'px;'
+          box.textContent = text
+          document.body.appendChild(box)
+          var h = box.getBoundingClientRect().height
+          box.remove()
+          return Math.max(1, Math.round(h / (FONT_SIZE * LINE_HEIGHT)))
+        }
+
+        try {
+          var rows = JSON.parse(document.getElementById('payload').textContent)
+          var q = new URLSearchParams(location.search)
+          var override = Number.parseFloat(q.get('w') || '')
+          var forced = Number.isFinite(override) ? override : 0
+
+          var commonW =
+            forced || document.getElementById('probe-common').getBoundingClientRect().width
+          var advancedW =
+            forced || document.getElementById('probe-advanced').getBoundingClientRect().width
+          commonW = Math.round(commonW * 100) / 100
+          advancedW = Math.round(advancedW * 100) / 100
+
+          if (!(commonW > 0) || !(advancedW > 0)) {
+            throw new Error('骨架量出的控件列宽为 0（注入的宽度规则没生效？）')
+          }
+
+          var measured = rows.map(function (row) {
+            var controlW = row.scope === 'advanced' ? advancedW : commonW
+            return {
+              key: row.key,
+              scope: row.scope,
+              controlW: controlW,
+              lines: boxLines(row.text, controlW),
+              text: row.text
+            }
+          })
+          var wrapping = measured.filter(function (r) {
+            return r.lines > 1
+          })
+
+          var report = {
+            stageWidth: document.getElementById('stage').getBoundingClientRect().width,
+            modalWidth:
+              Math.round(
+                document.querySelector('#stage .modal').getBoundingClientRect().width * 100
+              ) / 100,
+            controlWidths: { common: commonW, advanced: advancedW },
+            controlWidthsSource: forced ? 'forced' : 'measured-from-real-css',
+            note: forced ? '?w=' + forced + ' 强制两个区同宽' : null,
+            count: measured.length,
+            wrapping: wrapping.map(function (r) {
+              return {
+                key: r.key,
+                scope: r.scope,
+                lines: r.lines,
+                controlW: r.controlW,
+                text: r.text
+              }
+            }),
+            widestLineCount: measured.reduce(function (max, r) {
+              return Math.max(max, r.lines)
+            }, 0),
+            keys: measured.map(function (r) {
+              return r.key
+            })
+          }
+          document.getElementById('out').textContent = 'DESC_MEASURE=' + JSON.stringify(report)
+          document.title = 'DESC_MEASURE_DONE'
+        } catch (err) {
+          document.getElementById('out').textContent =
+            'DESC_MEASURE_ERROR=' + String((err && err.message) || err)
+          document.title = 'DESC_MEASURE_ERROR'
+        }
+      })()
+    </script>
+  </body>
+</html>

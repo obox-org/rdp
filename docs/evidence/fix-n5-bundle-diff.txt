@@ -1,0 +1,31 @@
+﻿N5（关闭路径）的前后对照：打包产物层面的证据
+
+对照物：
+  A) 旧产物 = extensions/rdp/out/rdp-1.0.0.oix（2026-10-11 20:24 打包，本轮整改之前的 ui）
+     → 解出的 index-C1ClMszZ.js
+  B) 新产物 = extensions/rdp/ui/（本轮 build）
+     → index-DDiHagXg.js
+
+关键串出现次数：
+  onMousedown    旧包 x2   新包 x0
+  Escape         旧包 x2   新包 x0
+  "mousedown"    旧包 x0   新包 x0
+
+旧包里的绑定（原文摘录）：
+  onMousedown:T[3]||(T[3]=ks(R=>!e.submitting&&s("close"),["self"]))},[E("form",{ref_key:"panel",ref:c,class:"modal",role:"dialog","aria-modal":"true","aria-labelledby":"rdp-modal-title",onSubmit:ks(H,["prevent"]),onKeydown:Uo(P,["e
+  me;T==="BUTTON"||T==="TEXTAREA"||H()}function V(K){K.key==="Escape"&&!n.submitting&&(K.stopPropagation(),s("close"))}return us(()=>{window.addEventListener("keydown",V),Bt(()=>{c.v
+
+结论：旧产物里确实有 overlay 的 onMousedown(..."self") 与 key==="Escape" → emit(close)；新产物里两者都不存在。
+      源码门禁 test/componentSource.test.js 同时禁止它们回到源码（见 fix-mutation-M1/M4*.txt 的同款手法）。
+
+运行时补充（非判别性，如实记录）：在无头 Chrome 里对模态框派发合成 mousedown / KeyboardEvent 后，
+新构建保持打开（<title>N5=open</title>）；但同样的合成事件在**旧包**上也保持打开
+（<title>OLD-overlay-mousedown=open</title> / <title>OLD-escape=open</title>），
+说明这类合成事件没能走到 Vue 的 .self 守卫 / window keydown 监听，故运行时这条不能判别新旧；
+N5 的判别依据是上面这份产物对照 + 源码门禁（监听器已从源码删除）。
+
+### 附注（21:55 重新打包后）
+旧包已从 out/ 移走并保留为证据：tmp/fix-out-rdp-1.0.0.before-fix.oix（解出的 ui 在 tmp/rdp-ui-shots/old-oix/）。
+extensions/rdp/out/rdp-1.0.0.oix 已用 `npm run pack` 重新生成（9 个条目；不含 data/），
+新包内 ui/assets/index-DDiHagXg.js 的 onMousedown x0、Escape x0，emptyLabel x2 ⇒ 修复确实进包。
+（重打包是收尾清单之外我主动补的一步：留着旧 .oix 会让"从文件安装"回到 N1/N5 修复之前的状态。）

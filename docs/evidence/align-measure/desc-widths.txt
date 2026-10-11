@@ -1,0 +1,74 @@
+# 全部 65 条 desc 的实测宽度 / 估算宽度 / 真实折行数
+# 探针字体 = 宿主 --font-family（12px = --font-size-sm）；行数按真实容器（宽=控件列宽）量
+# 控件列宽：常用区 446px、高级区 420px（1280 窗口宽的实测值）
+
+  行数   实测px   估算px  估算/实测  控件列  字段 (key)
+   1    414.77    508.8       1.23    420   singleMonInWindowedMode
+   1    414.09    526.2       1.27    420   driveStoreDirect
+   1    368.63    496.8       1.35    420   sessionBpp
+   1    364.44    465.6       1.28    446   password
+   1    360.38    439.8       1.22    420   usbDeviceStoreDirect
+   1    356.53    469.2       1.32    446   adminSession
+   1    355.25    522.6       1.47    446   fullscreen
+   1    345.88    460.8       1.33    446   keyboardHook
+   1    339.25    481.2       1.42    446   resolution
+   1    319.67      393       1.23    420   cameraStoreDirect
+   1    310.17    369.6       1.19    420   gatewayHostname
+   1    303.69      432       1.42    420   enableRdsAadAuth
+   1    301.34    381.6       1.27    446   port
+   1    297.23    367.8       1.24    420   remoteApplicationMode
+   1    297.16    433.2       1.46    446   authenticationLevel
+   1    288.27    403.2       1.40    446   host
+   1       288    331.2       1.15    446   dynamicResolution
+   1    287.58    346.2       1.20    420   deviceStoreDirect
+   1    283.81    389.4       1.37    446   username
+   1    282.33      384       1.36    446   clipboard
+   1    276.08      339       1.23    446   domain
+   1    274.23    328.2       1.20    420   gatewayCredentialsSource
+   1       264    303.6       1.15    446   remember
+   1       264    303.6       1.15    446   multimon
+   1       264    303.6       1.15    446   smartSizing
+   1    262.52    358.8       1.37    420   gatewayUsageMethod
+   1    261.23    326.4       1.25    420   remoteApplicationGuid
+   1    255.94    315.6       1.23    420   loadBalanceInfo
+   1    254.28    337.2       1.33    420   redirectWebAuthn
+   1    252.19    310.2       1.23    446   name
+   1       252    289.8       1.15    420   maximizeToCurrentDisplays
+   1       252    289.8       1.15    420   disableFullWindowDrag
+   1       252    289.8       1.15    420   promptCredentialOnce
+   1    247.34    307.2       1.24    420   promptForCredentials
+   1    239.95    319.2       1.33    446   audioMode
+   1    231.27    292.2       1.26    420   alternateShell
+   1       228    262.2       1.15    420   allowDesktopComposition
+   1       228    262.2       1.15    420   remoteApplicationExpandCmdLine
+   1    221.77    313.8       1.41    420   selectedMonitors
+   1       216    248.4       1.15    446   nla
+   1       216    248.4       1.15    420   bitmapCachePersistEnable
+   1       216    248.4       1.15    420   disableConnectionSharing
+   1    214.23      285       1.33    420   allowFontSmoothing
+   1    204.66    264.6       1.29    420   remoteApplicationIcon
+   1       204    234.6       1.15    420   audioCaptureMode
+   1       204    234.6       1.15    420   remoteApplicationExpandWorkingDir
+   1       192    220.8       1.15    420   redirectSmartCards
+   1       192    220.8       1.15    420   networkAutoDetect
+   1       192    220.8       1.15    420   disableMenuAnims
+   1       192    220.8       1.15    420   disableThemes
+   1       192    220.8       1.15    420   negotiateSecurityLayer
+   1       180      207       1.15    420   redirectLocation
+   1       180      207       1.15    420   bandwidthAutoDetect
+   1       180      207       1.15    420   compression
+   1       180      207       1.15    420   disableCursorSetting
+   1    174.55    232.8       1.33    420   shellWorkingDirectory
+   1       168    193.2       1.15    420   videoPlaybackMode
+   1       168    193.2       1.15    420   disableWallpaper
+   1       168    193.2       1.15    420   remoteApplicationProgram
+   1       156    179.4       1.15    446   autoReconnect
+   1       156    179.4       1.15    420   redirectPrinters
+   1       156    179.4       1.15    420   redirectComPorts
+   1       156    179.4       1.15    420   remoteApplicationCmdLine
+   1       144    165.6       1.15    420   remoteApplicationName
+   1       144    165.6       1.15    420   remoteApplicationFile
+
+折行（&gt;1 行）的字段：（无）
+实测最大值 = 414.77px (singleMonInWindowedMode)，控件列 420px
+估算/实测 比值范围 = 1.15 ~ 1.47

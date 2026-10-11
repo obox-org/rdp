@@ -1,0 +1,26 @@
+﻿B2 的证据：keyboardhook 取值 3 的官方来源（2026-10-11 用 web_fetch 回读）
+
+### ① 当前页（Learn，Last updated 2026-05-16）—— 确有 3
+URL: https://learn.microsoft.com/en-us/azure/virtual-desktop/rdp-properties
+（同一内容的 windows-server 路径 https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/clients/rdp-files 现在 302 到该页）
+
+原文（keyboardhook 一节）：
+  Supported values:
+    0: Windows key combinations are applied on the local device.
+    1: (Desktop sessions only) Windows key combinations are applied on the remote computer when in focus.
+    2: (Desktop sessions only) Windows key combinations are applied on the remote computer in full screen mode only.
+    3: (RemoteApp sessions only) Windows key combinations are applied on the RemoteApp when in focus.
+       We recommend you use this value only when publishing the Remote Desktop Connection app (mstsc.exe) from the
+       host pool on Azure Virtual Desktop. This value is only supported when using the Windows client.
+  Default value: 2
+
+### ② 旧版页（MicrosoftDocs/windowsserverdocs 的 rdp-files.md，ms.date 2020-09-14，commit 92e46b1）—— 只列 0/1/2
+URL: https://raw.githubusercontent.com/MicrosoftDocs/windowsserverdocs/92e46b11154bab929e2c622d759ef62ec264c4e6/WindowsServerDocs/remote/remote-desktop-services/clients/rdp-files.md
+原文（keyboardhook 行，该版本把 3 的条目省略了）：
+  keyboardhook:i:value | Determines when Windows key combinations (WIN key, ALT+TAB) are applied to the remote session for desktop connections.
+  | - 0: applied on the local computer / - 1: applied on the remote computer when in focus / - 2: applied on the remote computer in full screen mode only | 2
+
+### 结论
+实现里的 label「RemoteApp 会话交给远程」与当前官方页一致 ⇒ **不需要**改回「始终交给远程」、也不需要退回"待确认"；
+覆盖率维持 65/65、26/26、待确认 0。为避免再次漂移，test/fieldDocs.test.js 的 OFFICIALLY_CONFIRMED["keyboardHook=3"]
+现在写明：引文原文 + 回读日期 + "旧版 rdp-files 表只列 0/1/2"。

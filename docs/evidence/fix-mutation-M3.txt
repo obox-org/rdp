@@ -1,0 +1,29 @@
+变异自证：M3
+文件：extensions/rdp/src/fields.js
+目标测试：test/formState.test.js
+变异手法：把 singleMonInWindowedMode 改回"恒隐藏"（M3 之前的行为）
+替换：singleMonInWindowedMode: (f) => !truthy(f.fullscreen),   =>   singleMonInWindowedMode: () => false,
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 6
+ℹ pass 6
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ R-D2-3 隐藏字段不得携带旧值 / 不影响相邻字段 (0.9429ms)
+✖ R-D2-5 VISIBILITY 规则不得泄漏到字段对象（不得就地挂载 showIf） (2.5531ms)
+✖ R-D2-6 判定器：同一份「屏幕上可见的表单值」经不同路径必须得到逐字节相同的 payload (0.9797ms)
+ℹ tests 6
+ℹ pass 3
+ℹ fail 3
+✖ failing tests:
+✖ R-D2-3 隐藏字段不得携带旧值 / 不影响相邻字段 (0.9429ms)
+  AssertionError [ERR_ASSERTION]: 窗口模式下可见 → 提交用户值
+✖ R-D2-5 VISIBILITY 规则不得泄漏到字段对象（不得就地挂载 showIf） (2.5531ms)
+  AssertionError [ERR_ASSERTION]: The expression evaluated to a falsy value:
+✖ R-D2-6 判定器：同一份「屏幕上可见的表单值」经不同路径必须得到逐字节相同的 payload (0.9797ms)
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 6
+ℹ pass 6
+ℹ fail 0

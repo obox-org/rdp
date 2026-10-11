@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <title>--label-w 实测</title>
+    <style>
+      :root {
+        /* 宿主 --font-family 的兜底值（extensions/rdp/src/theme.js FALLBACK_TOKENS） */
+        --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei',
+          'PingFang SC', sans-serif;
+      }
+      body {
+        margin: 0;
+        font-size: 12px;
+        font-family: var(--font-family);
+      }
+      #probe {
+        position: fixed;
+        left: -10000px;
+        top: 0;
+        white-space: pre;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="probe"></div>
+    <pre id="out"></pre>
+    <script type="module">
+      import { COMMON_GROUPS, ADVANCED_GROUPS } from './fields.js'
+
+      const probe = document.getElementById('probe')
+
+      /** 用真实渲染测量文本宽度（屏幕像素）；family 为可选字体栈覆盖 */
+      function widthOf(text, sizePx, family) {
+        probe.style.fontSize = sizePx + 'px'
+        probe.style.fontWeight = '400'
+        probe.style.fontFamily = family || 'var(--font-family)'
+        probe.textContent = text
+        return Math.round(probe.getBoundingClientRect().width * 100) / 100
+      }
+
+      const groups = [...COMMON_GROUPS, ...ADVANCED_GROUPS]
+      const labels = []
+      const options = []
+      for (const g of groups) {
+        for (const f of g.fields) {
+          labels.push({ key: f.key, label: f.label, required: !!f.required, type: f.type })
+          if (f.type === 'select') {
+            for (const o of f.options) options.push({ key: f.key, text: o.value + ' — ' + o.label })
+            if (f.optional) options.push({ key: f.key, text: f.emptyLabel || '（留空）' })
+          }
+        }
+      }
+
+      // 标签按 --font-size-sm = 12px 渲染；必填项多一个 " *"（.field__required，margin-left 2px）
+      const L = labels.map((l) => ({
+        key: l.key,
+        label: l.label,
+        required: l.required,
+        w: widthOf(l.label, 12),
+        wStar: l.required ? widthOf(l.label + ' *', 12) : widthOf(l.label, 12),
+        wYahei: widthOf(l.label, 12, "'Microsoft YaHei'"),
+        wYaheiStar: widthOf(l.label + (l.required ? ' *' : ''), 12, "'Microsoft YaHei'"),
+        wMono: widthOf(l.label, 12, 'monospace'),
+        // 与 test/formAlign.test.js 同一套"字体上界"口径（全角 1.15em / 其余 0.8em）
+        wUpper:
+          Math.round(
+            [...(l.label + (l.required ? ' *' : ''))].reduce(
+              (em, ch) =>
+                em +
+                (/[\u1100-\u115f\u2e80-\u303f\u3041-\u33ff\u3400-\u4dbf\u4e00-\u9fff\ua000-\ua4cf\uac00-\ud7a3\uf900-\ufaff\ufe30-\ufe4f\uff00-\uff60\uffe0-\uffe6]/.test(
+                  ch
+                )
+                  ? 1.15
+                  : 0.8),
+              0
+            ) * 120
+          ) / 10
+      }))
+      const O = options.map((o) => ({ key: o.key, text: o.text, w: widthOf(o.text, 13) }))
+
+      L.sort((a, b) => b.wStar - a.wStar)
+      O.sort((a, b) => b.w - a.w)
+
+      const f = (n) => String(n).padStart(7)
+      const lines = []
+      lines.push('# --label-w 实测（无头 Chrome，宿主 --font-family 栈；标签 12px = --font-size-sm）')
+      lines.push('# 字段总数 ' + L.length + '（含必填 ' + L.filter((l) => l.required).length + '），select 选项文本 ' + O.length + ' 条（13px = --font-size）')
+      lines.push('')
+      lines.push('## 标签宽度（降序，前 12；dom=宿主字体栈，yahei=强制 Microsoft YaHei，mono=强制等宽，upper=字体上界估算）')
+      lines.push('  dom*    dom   yahei*  yahei    mono   upper   星号  必填  label (key)')
+      for (const l of L.slice(0, 12)) {
+        lines.push(
+          `${f(l.wStar)} ${f(l.w)} ${f(l.wYaheiStar)} ${f(l.wYahei)} ${f(l.wMono)} ${f(l.wUpper)}  ${l.required ? '有' : '无'}    ${l.label} (${l.key})`
+        )
+      }
+      lines.push('')
+      lines.push('## 最长标签（按"含必填星号"取）')
+      lines.push(JSON.stringify(L[0]))
+      lines.push('## 选项文本宽度（降序，前 8）')
+      lines.push('  dom     option 文本 (key)')
+      for (const o of O.slice(0, 8)) lines.push(`${f(o.w)}   ${o.text} (${o.key})`)
+      lines.push('')
+      lines.push('## 结论输入')
+      lines.push(
+        JSON.stringify(
+          {
+            labelMaxDomStar: L[0].wStar,
+            labelMaxYaheiStar: Math.max(...L.map((l) => l.wYaheiStar)),
+            labelMaxMonoStar: Math.max(...L.map((l) => l.wMono)),
+            labelMaxUpper: Math.max(...L.map((l) => l.wUpper)),
+            optionMaxDom: O[0].w
+          },
+          null,
+          2
+        )
+      )
+
+      document.getElementById('out').textContent = lines.join('\n')
+      document.title = 'MEASURE_DONE'
+    </script>
+  </body>
+</html>

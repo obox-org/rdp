@@ -1,0 +1,24 @@
+变异自证：M1
+文件：extensions/rdp/src/components/ConnectionModal.vue
+目标测试：test/componentSource.test.js
+变异手法：把 M1 的修复点改回旧写法（reactive(rowToForm(props.row))：props 不再驱动表单）
+替换：const form = reactive(defaultForm())   =>   const form = reactive(rowToForm(props.row))
+
+--- ① 还原态（未变异）：应全绿 ---
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0
+
+--- ② 变异态：目标测试应变红 ---
+✖ M1：ConnectionModal 的 form 必须由 props.row 经 watch 同步（不得回退成 reactive(rowToForm(...))） (1.3201ms)
+ℹ tests 4
+ℹ pass 3
+ℹ fail 1
+✖ failing tests:
+✖ M1：ConnectionModal 的 form 必须由 props.row 经 watch 同步（不得回退成 reactive(rowToForm(...))） (1.3201ms)
+  AssertionError [ERR_ASSERTION]: form 必须以空壳 defaultForm() 起手
+
+--- ③ 还原后：应恢复全绿 ---
+ℹ tests 4
+ℹ pass 4
+ℹ fail 0

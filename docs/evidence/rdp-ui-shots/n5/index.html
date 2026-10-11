@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!-- JS 执行前由 UA 画出的画布底色用暗色，避免白闪（不含任何色值字面量；设计 §2.7.8 E3） -->
+    <meta name="color-scheme" content="dark" />
+    <title>远程桌面</title>
+    <script type="module" crossorigin src="./assets/index-DDiHagXg.js"></script>
+    <link rel="stylesheet" crossorigin href="./assets/style-B8821UTg.css">
+  </head>
+  <body>
+    <div id="app"></div>
+    <!-- evidence-only injection: open modal, fill gateway host, try overlay-mousedown + Escape (N5) -->
+    <script>
+      setTimeout(function () {
+        var create = document.querySelector('button[aria-label="\u65b0\u5efa\u8fde\u63a5"]')
+        if (create) create.click()
+        setTimeout(function () {
+          var gw = document.querySelector('#rdp-field-gatewayHostname')
+          if (gw) {
+            var setter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set
+            setter.call(gw, 'gw.example')
+            gw.dispatchEvent(new Event('input', { bubbles: true }))
+          }
+          var toggle = document.querySelector('.accordion__toggle')
+          if (toggle) toggle.click()
+          setTimeout(function () {
+            var overlay = document.querySelector('.overlay')
+            if (overlay) overlay.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))
+            window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))
+            document.title = 'N5=' + (document.querySelector('form.modal') ? 'open' : 'closed')
+          }, 200)
+        }, 300)
+      }, 400)
+    </script>  </body>
+</html>

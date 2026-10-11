@@ -1,0 +1,39 @@
+﻿# --label-w 瀹炴祴锛堟棤澶?Chrome锛屽涓?--font-family 鏍堬紱鏍囩 12px = --font-size-sm锛?
+# 瀛楁鎬绘暟 65锛堝惈蹇呭～ 2锛夛紝select 閫夐」鏂囨湰 27 鏉★紙13px = --font-size锛?
+
+## 鏍囩瀹藉害锛堥檷搴忥紝鍓?12锛沝om=瀹夸富瀛椾綋鏍堬紝yahei=寮哄埗 Microsoft YaHei锛宮ono=寮哄埗绛夊锛寀pper=瀛椾綋涓婄晫浼扮畻锛?
+  dom*    dom   yahei*  yahei    mono   upper   鏄熷彿  蹇呭～  label (key)
+    120     120     120     120     120     138  鏃?   鍏ㄥ睆鏃跺崰婊″綋鍓嶆樉绀哄櫒 (maximizeToCurrentDisplays)
+    108     108     108     108     108   124.2  鏃?   缃戝叧涓庝富鏈哄叡鐢ㄥ嚟鎹?(promptCredentialOnce)
+ 106.72  106.72  108.73  108.73     102   125.4  鏃?   NLA锛堢綉缁滅骇璁よ瘉锛?(nla)
+     96      96      96      96      96   110.4  鏃?   灞曞紑宸ヤ綔鐩綍鍙橀噺 (remoteApplicationExpandWorkingDir)
+  89.95   89.95   95.66   95.66      84   123.6  鏃?   RemoteApp 妯″紡 (remoteApplicationMode)
+  87.94   87.94   91.38   91.38      90   122.4  鏃?   璐熻浇鍧囪　 Cookie (loadBalanceInfo)
+     84      84      84      84      84    96.6  鏃?   浣嶅浘缂撳瓨鎸佷箙鍖?(bitmapCachePersistEnable)
+     84      84      84      84      84    96.6  鏃?   绂佺敤鍏ㄧ獥鍙ｆ嫋鍔?(disableFullWindowDrag)
+     84      84      84      84      84    96.6  鏃?   寮哄埗寮瑰嚭鍑嵁妗?(promptForCredentials)
+     84      84      84      84      84    96.6  鏃?   涓嶅鐢ㄥ凡鏂細璇?(disableConnectionSharing)
+     84      84      84      84      84    96.6  鏃?   灞曞紑鍛戒护琛屽彉閲?(remoteApplicationExpandCmdLine)
+  75.48   75.48   80.19   80.19      72   104.4  鏃?   MTP/PTP 璁惧 (deviceStoreDirect)
+
+## 鏈€闀挎爣绛撅紙鎸?鍚繀濉槦鍙?鍙栵級
+{"key":"maximizeToCurrentDisplays","label":"鍏ㄥ睆鏃跺崰婊″綋鍓嶆樉绀哄櫒","required":false,"w":120,"wStar":120,"wYahei":120,"wYaheiStar":120,"wMono":120,"wUpper":138}
+## 閫夐」鏂囨湰瀹藉害锛堥檷搴忥紝鍓?8锛?
+  dom     option 鏂囨湰 (key)
+ 176.58   3 鈥?RemoteApp 浼氳瘽浜ょ粰杩滅▼ (keyboardHook)
+ 173.16   3 鈥?鎻愮ず杈撳叆鍑嵁 + 鍩烘湰璁よ瘉 (gatewayCredentialsSource)
+ 139.47   0 鈥?璇㈤棶瀵嗙爜锛圢TLM锛?(gatewayCredentialsSource)
+ 131.14   1 鈥?杩滅▼锛堟闈細璇濓級 (keyboardHook)
+ 131.14   0 鈥?涓嶉獙璇侊紝鐩存帴杩炴帴 (authenticationLevel)
+ 131.14   1 鈥?楠岃瘉澶辫触鍒欎笉杩炴帴 (authenticationLevel)
+ 131.14   4 鈥?鏈湴鍦板潃缁曡繃缃戝叧 (gatewayUsageMethod)
+ 131.14   2 鈥?褰撳墠鐧诲綍鐢ㄦ埛鍑嵁 (gatewayCredentialsSource)
+
+## 缁撹杈撳叆
+{
+  "labelMaxDomStar": 120,
+  "labelMaxYaheiStar": 120,
+  "labelMaxMonoStar": 120,
+  "labelMaxUpper": 138,
+  "optionMaxDom": 176.58
+}

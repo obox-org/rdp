@@ -1,0 +1,194 @@
+「表单对齐」交付说明与门禁记录（2026-10-11）
+需求（用户原话）：**选项名需要左对齐，固定长度；选项/输入框也需要左对齐，防止长度不一。**
+
+================================================================================
+一、实现：两列栅格（display: grid），不是 flex + flex: 0 0 <固定宽>
+================================================================================
+落点：extensions/rdp/src/styles.css 的 `.field`（`.form-rows` 仍是"每项独占一行"的纵向 flex）。
+
+选择 grid 的理由（三条，都是"结构决定对齐"而不是"元素决定对齐"）：
+1) 列边界由**容器**定义，与"这一行放了什么元素"无关 ⇒ 新增/缺失元素不会让某行控件起点飘移；
+   flex + `flex: 0 0 var(--label-w)` 只能管住标签自己，控件起点仍取决于行内元素与 gap 的相互作用
+   （某行少一个元素就得靠占位元素补，对齐成了"每行各自负责"）。
+2) 说明行/红字必须是"控件列内的第 2/3 行、标签列留空" ⇒ 直接 `grid-column: 2`；
+   flex 下要 `margin-left: var(--label-w)` 硬凑，窄窗口降级还得再撤掉，容易漏改。
+3) 列宽只在**一处**改（`:root` 的 `--label-w`），窄窗口降级只需把模板换成单列。
+
+关键结构（**踩过并已修掉**的坑）：`.field` 是**唯一**的栅格容器，标签/控件/说明/红字全是它的
+**直接子元素**。中途曾把"标签 + 控件"包一层 `.field__row` 做**嵌套栅格**，结果那一层被外层当成
+"第 1 列的栅格项"，宽度只剩 `--label-w` ⇒ 内层控件列直接塌成 0：
+    .field      → cols: 144px 436px   （正确）
+    .field__row → cols: 144px 0px     （嵌套时的实测，控件宽 0px，肉眼可见整表控件消失）
+证据：docs/evidence/align-shots/measure-common.txt（当时的 debug 段），
+      以及 docs/evidence/align-mutation-A1-gates.txt 的 A1-9 变异（把嵌套加回来会变红）。
+
+最终 CSS（简化）：
+    :root { --label-w: 144px; }
+    .field { display: grid; grid-template-columns: var(--label-w) minmax(0, 1fr);
+             column-gap: 8px; row-gap: 4px; align-items: start; }
+    .field__label   { justify-self: start;   text-align: left; color: var(--fg-dim);
+                      font-size: var(--font-size-sm); }
+    .field__control { justify-self: stretch; text-align: left; min-width: 0;
+                      display: flex; flex-direction: column; align-items: stretch; }
+    .field__desc, .field__hint { grid-column: 2; grid-row: 2; }   /* 控件列内、与控件左缘对齐 */
+    .field__error              { grid-column: 2; grid-row: 3; }
+    .field__label--empty       { height: 0; }                      /* 勾选框行的标签列空占位 */
+    `minmax(0, 1fr)` 而非 `1fr`：栅格项默认 `min-width: auto`，长内容会把控件列撑宽引发横向溢出。
+
+三类控件的落位：
+- 文本/数字/密码/下拉：标签列 + 控件列各占一格；下拉框 `width: 100%` 吃满控件列；
+- **勾选框**：标签列放空占位（`.field__label--empty`，`aria-hidden`），方框 + 文字整体落在控件列
+  ⇒ 方框左边缘与其它控件的左边缘**同一条竖线**；
+- **成对字段**（分辨率 宽×高）：两个输入框 `.pair` 都在控件列内，`flex: 1 1 0` 等宽、`min-width: 0`。
+
+================================================================================
+二、--label-w = 144px 的实测依据
+================================================================================
+量法：无头 Chrome 直开一份页面（docs/evidence/align-measure/measure.html，只 import 了一份
+src/fields.js 的副本），用真实渲染（`getBoundingClientRect`）逐个量 65 个字段的 label 与 27 条
+select 选项文本；标签按 `--font-size-sm` = 12px、选项文本按 `--font-size` = 13px。
+字体栈用**宿主**的 `--font-family`（theme.js FALLBACK_TOKENS 的兜底值）：
+  -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif
+（Windows 上 Latin 落 Segoe UI、CJK 落 Microsoft YaHei；另用"强制 Microsoft YaHei"与"强制等宽"
+两种极端再量一遍做交叉验证。）
+
+实测（docs/evidence/align-measure/label-w-measure.txt）：
+  最长标签：maximizeToCurrentDisplays「全屏时占满当前显示器」= 9 个全角字
+            12px 实测 120.0px（宿主字体栈 / 强制雅黑 / 强制等宽，三者都是 120.0px）
+  次长：    promptCredentialOnce「网关与主机共用凭据」108.0px
+            nla「NLA（网络级认证）」106.7–108.7px
+            remoteApplicationExpandWorkingDir「展开工作目录变量」96.0px
+  最长选项文本：keyboardHook 的「3 — RemoteApp 会话交给远程」= 176.6px（13px）
+               gatewayCredentialsSource 的「3 — 提示输入凭据 + 基本认证」= 173.2px
+
+取值推导：
+  - 为抗"宿主换一套更宽的字体"这种漂移，取**字体上界估算**（全角 1.15em / 其余 0.8em，
+    与 test/formAlign.test.js 的 A1② 同一套口径）作预算 ⇒ 最长标签上界 **138.0px**；
+  - 标签列 = 138.0 + 6px 余量 ⇒ **144px**（12 个全角字宽）；
+  - 1280 宽窗口下的横向预算：模态框 640（≤100%）→ 扣 `.modal__body` 左右各 20 ⇒ 600
+    → 高级区再扣 `.accordion__body` 左右各 12 ⇒ 行宽 **576**；控件列 = 576 − 144 − 8 = **424px**
+    （常用区无高级区内边距，控件列 **446px**）⇒ 最长选项 176.6px + select 箭头/内边距富余充足，
+    不折行、不溢出。
+  - 实测复核（docs/evidence/align-shots/measure-{common,advanced,narrow}.txt）：
+    controlColumnWidth = 446（常用区）/ 420（高级区）/ 394（窄窗口）px，labelWiderThanColumn = 0，
+    controlOverflow = 0，modalBody horizontalOverflow = 0，docScrollWidth == docClientWidth。
+
+================================================================================
+三、窄窗口降级：媒体查询（max-width: 568px）→ 标签/控件改上下堆叠
+================================================================================
+  @media (max-width: 568px) {
+    .field { grid-template-columns: minmax(0, 1fr); }
+    .field__label { justify-self: start; }
+    .field__desc, .field__hint, .field__error { grid-column: 1; }
+    .field__label--empty { display: none; }
+  }
+断点 568px 由"两列仍够用"反推（与 test/formAlign.test.js 的 A1⑥ 算式同源）：
+  --label-w(144) + 列间距(8) + 控件列下限(320) + .overlay 左右内边距(32)
+  + .modal__body 左右内边距(40) + .accordion__body 左右内边距(24) = 568px
+控件列下限 320px 的依据：放得下最长下拉项 176.6px（外加 select 箭头与内边距）与成对输入框两格 + ×。
+
+为什么用媒体查询而不是容器查询：本窗口是**整个扩展子窗口**（#app 占满 100vw，模态框宽度由自身
+max-width:100% 决定），宿主侧的窗口宽度就是视口宽度 ⇒ 媒体查询的判据与"实际可用宽度"同源；
+容器查询需要给祖先加 `container-type`（引入 containment 语义、影响 fixed 定位的遮罩），留作后续升级。
+
+不允许横向滚动 / 文字裁切的保障：
+- `.modal__body { overflow-wrap: anywhere; }`（长 host / 长下拉项 / 长说明都换行，不撑宽）；
+- `.check input { flex: 0 0 14px; }`（标签文字长时方框不被挤扁）；
+- 全文件**不得**出现 `overflow-x: auto|scroll`（A1⑥ 断言），即不许用横向滚动条"藏"对齐问题；
+- `<meta name="viewport" content="width=device-width">` 仍在（A1⑥ 断言）。
+实测：500×805 视口下 distinctLabelX = [53]（标签列空占位宽 0 被过滤）、distinctControlX = [53]、
+commonLabelX = [53] ⇒ 标签、控件、说明**三者同一 x**（53px = 卡片窗口左缘 16 + 模态框边框/内边距），
+controlColumnWidth = 394，controlOverflow = 0，docScrollWidth(500) == docClientWidth(500)。
+
+================================================================================
+四、视觉与机器证据
+================================================================================
+截图（无头 Chrome 直开 `ui/index.html` 的**副本**，副本里注入"打开模态框 / 展开高级区 + 量坐标"
+的脚本；**扩展源码未改**，见 docs/evidence/align-shots/measure-page.html）：
+- docs/evidence/align-modal-common.png   1280 宽，常用区：标签一条竖线、控件一条竖线、勾选框对齐
+- docs/evidence/align-modal-advanced.png 1280 宽，常用区 + 高级区**全部展开**（窗口开高到 4500px
+  让模态框一屏拍完，未改 max-height）
+- docs/evidence/align-modal-narrow.png   500 宽（< 568 断点）：标签在上、控件在下、两者左缘同 x
+- docs/evidence/align-modal-stacked.png  560 宽（刚过断点，仍单列）
+坐标测量（同一份副本，`--dump-dom` 抓 <pre id="measure"> 的 JSON）：
+- docs/evidence/align-shots/measure-common.txt   visible 18 项：distinctLabelX=[333]（仅一个有标签的
+  组合）、distinctControlX=[485]、distinctDescX=[485]、pairMisaligned=[]、descMisaligned=[]、
+  controlOverflow=[]、labelWiderThanColumn=[]、controlColumnWidth=[446]
+- docs/evidence/align-shots/measure-advanced.txt visible 51 项（常用 18 + 高级 33）：
+  常用区 controlX 恒 485、高级区恒 498（差 13 = 高级区容器左右各 12px 内边距 + 1px 边框），
+  **各区内各自只有一条竖线**；32 个勾选框全部落在控件列；分辨率 pairXs=[485, 720.45]，首格与控件列左缘相同
+- docs/evidence/align-shots/measure-narrow.txt   500 宽：标签/控件/说明同 x = 53
+- 说明行一律 **1 行**（**已无例外**）：65 条 desc 在 1280 宽下逐条实量，`descLineCountDist = [1]`、
+  `descWrapping = []`（常用区 446px 与高级区 420px 两个口径都量）。曾经的唯一例外「密码」已把 desc
+  由 40 字改短为 25 字（单行宽度 449.19px → 364.44px，余量 81.56px），并加了门禁 A1⑧ 钉住
+  "1280 下不得折行"。改前/改后逐条实测见 docs/evidence/align-desc-oneline.txt 与
+  docs/evidence/align-measure/desc-widths.txt。
+
+================================================================================
+五、门禁（extensions/rdp/test/formAlign.test.js，8 条）
+================================================================================
+A1① 标签列是**固定宽度**（--label-w 值不是 auto/max-content/fit-content），`.field` 是两列栅格
+     `var(--label-w) minmax(0, 1fr)`，且不得回退成 `flex: 0 0 auto` 或 `margin-left: var(--label-w)`
+A1② --label-w 放得下 fields.js 里最长的标签（字体上界估算 ≤ 预算；同时钉 75% 下限，防无意义放大）；
+     并验 1280 窗口下控件列 ≥ 320px
+A1③ 标签与控件列都**左对齐**（text-align: left + 标签 justify-self: start + 控件 justify-self: stretch）
+A1④ 说明行在**控件列内**（grid-column: 2 / grid-row: 2），错误行第 3 行；说明仍是 --fg-dim +
+     --font-size-sm；select 取值说明仍在 option 文本/title 里
+A1⑤ 勾选框落在控件列（标签列空占位）、成对字段两格在控件列内左对齐（pair 等宽、可收缩、方框不被压扁）
+A1⑥ 窄窗口降级规则存在（媒体查询把 .field 收成单列；说明/错误回到第 1 列；无 overflow-x:auto|scroll；
+     viewport 声明在）
+A1⑦ 标签与控件必须是 `.field` 的**直接子元素**（模板里不得再出现 `<div class="field__row">`，
+     styles.css 里也不得再为 `.field__row` 定义栅格）
+A1⑧ **1280 宽窗口下没有任何 desc 折行**：用无头 Chrome 的**真实排版**逐条量行数（夹具
+     test/fixtures/desc-lines.html + test/descLinesBrowser.mjs；控件列宽由浏览器按从 styles.css
+     **原样抽出的真实规则**算出，实测 448 / 424px，与真实页面的 446 / 420px 在 ±8px 内），
+     并带一条自检：把列宽强制压到 320px 必须报出折行，否则判量法失效。窄窗口降级下允许折行，本门禁不管。
+
+配套改动：stylesTokens.test.js 与 fallbackInputs.test.js 的 `EXTENSION_LAYOUT_VARS` 加入 `--label-w`
+（它是扩展自有的**布局**变量，不是主题 token，不进兜底表）；stylesTokens 的 `:root` 白名单断言同步改名。
+
+================================================================================
+六、变异自证（红 → 还原 → 绿）
+================================================================================
+脚本：extensions/rdp/scripts/mutate-align-gates.mjs（每处只改一处字面，断言锚点恰好命中 1 次）
+证据：docs/evidence/align-mutation-A1-gates.txt（总判定：全部 **10** 处变异均被拦住且还原后全绿 ✔）
+  A1-10 把「密码」desc 改回原长句（会折两行）→ 红（A1⑧）→ 还原绿
+  A1-1 --label-w 的列宽 auto              → 红（A1①/A1⑧）→ 还原绿
+  A1-2 --label-w: max-content             → 红（A1①/A1②/A1⑥）→ 还原绿
+  A1-3 --label-w: 120px（放不下最长标签） → 红（A1②）→ 还原绿
+  A1-4 标签 justify-self: end             → 红（A1③）→ 还原绿
+  A1-5 控件 justify-self: end             → 红（A1③）→ 还原绿
+  A1-6 说明 grid-column: 1                → 红（A1④）→ 还原绿
+  A1-7 勾选框搬回标签列（去掉空占位）      → 红（A1⑤）→ 还原绿
+  A1-8 拆掉 568px 的降级覆盖               → 红（A1⑥）→ 还原绿
+  A1-9 把嵌套栅格 .field__row 加回来        → 红（A1⑦）→ 还原绿
+（A1-1/A1-2 顺带把 A1⑧ 也弄红是**预期**的连带：列宽算式一改，A1⑧ 里"量出的列宽必须与算式吻合"就会响。）
+还原后 src/fields.js、src/styles.css、src/components/ConnectionField.vue 与变异前逐字节一致
+（旧值 74874D5C…E549 / 007A8F8E…801A；本次 fields.js 因改短 desc 而变为 216FDD1D…AE71），
+重新 build 后产物哈希稳定 ⇒ 脚本没污染源码。
+
+================================================================================
+七、门槛结果
+================================================================================
+- cd extensions/rdp && node --test → tests 118 / pass 118 / fail 0（改动前基线 109/109）
+- npx prettier --check .          → All matched files use Prettier code style!
+- npm run build                   → vite build 成功，产出 ui/index.html + ui/assets/{index-BHaCIB5u.js,
+                                    style-BBegKGh9.css}
+- 安装目录同步：9 个分发文件源 ↔ 安装 SHA256 全部相同（bad=0），data/ 三文件哈希 + mtime + 字节数
+  逐条不变（见 docs/evidence/align-install-sync.txt）
+
+================================================================================
+八、残留风险
+================================================================================
+1. 触控/极长中英混排标签若新增（>138px 上界），A1② 会变红——这是**有意**的：提示重测 --label-w
+   或把标签改短，而不是让标签悄悄折行。
+2. A1⑧ 依赖本机装了 Chrome/Edge（`--headless`）。找不到时该条 `t.skip()` 并在测试输出里显式标注；
+   可用 `CHROME_PATH` 指定。CI 上若要跑满，需要能装浏览器。
+3. 降级用媒体查询而非容器查询：若将来模态框被嵌进**比 568px 更窄的卡片**里（而不是独立子窗口），
+   媒体查询会按视口而不是按容器判据 —— 那时需要升级成 `@container`（并给祖先加 container-type）。
+4. 高级区 labelX 与常用区差 13px（高级区容器内边距所致）是**设计上的分区缩进**，不是对齐破口：
+   两个区各自只有一条标签竖线、一条控件竖线（measure-advanced.txt 的 commonLabelX / advancedLabelX）。
+5. `--label-w` 进了 stylesTokens 的"扩展自有布局变量"白名单：它只放行**变量名**，颜色/字体族门禁不受影响
+   （零自造色值、零自造字体族两条断言未改，仍全绿）。
+6. 高级区最宽的两条 desc（「窗口模式单显」414.77px、「驱动器」414.09px）距 420px 列宽只剩 5px 余量：
+   文案再加一个字就会折行（那时 A1⑧ 会变红并指名报错），属于**有意**的紧边界而非隐患。
