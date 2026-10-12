@@ -1,6 +1,6 @@
 # 远程桌面（obox 用户扩展）
 
-在 obox 的「应用」里提供一个 RDP 连接管理器：卡片列表（标题 `username@IP:Port`）、新建 / 编辑 / 删除确认 / 打开。
+在 obox 的「应用」里提供一个 RDP 连接管理器：卡片列表（标题 `username@IP:Port`，列表上方带搜索框）、新建 / 编辑 / 删除确认 / 打开。
 打开时生成 `.rdp` 文件 → 用 `cmdkey` 预置 Windows 凭据（密码不用手输）→ 拉起 `mstsc.exe`。
 
 - 形态：**用户扩展**（`.oix` 分发），只贡献一个 App 卡片，界面只中文
@@ -16,15 +16,15 @@ helper.cjs             Node 助手：storeCredential / deleteCredential / launch
 lib/rdpFile.mjs        .rdp 文本生成（字段表 §3.6、CRLF、转义防护）
 lib/cmdkeyArgs.mjs     cmdkey 参数拼装（TERMSRV 目标串策略）
 lib/connection.mjs     连接校验 / 归一 / 序列化（卡片标题、库行）
-src/**                 Vue 3 子应用源码（构建到 ui/，与源码分目录；src/theme.js = 主题接收桥 + 兜底 token）
+src/**                 Vue 3 子应用源码（构建到 ui/，与源码分目录；src/theme.js = 主题接收桥 + 兜底 token；src/search.js = 卡片搜索匹配器，纯函数）
 ui/**                  Vite 构建产物（`ui/index.html` + `ui/assets/*`）
-test/*.test.js         node --test（lib 三个纯模块 + 入口消息契约 + helper 集成 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本）
+test/*.test.js         node --test（lib 三个纯模块 + 入口消息契约 + helper 集成 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本 / 搜索匹配器）
 scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 ```
 
 ## 2. 安装
 
-1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.0.oix`；
+1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.1.oix`；
 2. **拖拽**：把 `.oix` 直接拖进扩展管理器视图。
 
 安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp_chenzhi`，即 `<name>_<author>`，所以不要硬编码 `app://extensions/rdp/`）。
@@ -304,6 +304,24 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 - **行为变更 1（回填）**：以前编辑时密码框恒为空、要改密码就得重打一遍；现在打开编辑会填上已存密码（默认掩码，眼睛可看明文）。"留空"不再能用来表达"别动密码"——不动它时表单里就是原值，会原样重写；
 - **行为变更 2（清空即删除）**：以前清空密码框**不会**删掉已存 secret（旧 secret 静默留着，下次打开照样用它连）；现在**清空并保存 = 删除** `conn:<id>`，界面上一行说明写在密码框的描述里。为避免"误删"，删除**只认界面显式声明的 `clearPassword`**（判定见 §4.1 与 `src/fields.js` 的 `passwordCleared`）：拿不准（读取失败 / 新建 / 从未存过）一律不删；
 - 变更自证：`test/passwordBackfill.test.js`（14 条）与 `test/componentSource.test.js` 的 P1/P2 源码门禁；变异自证留档在 `docs/evidence/password-mutation-*.txt`。
+
+### 12.7 卡片列表搜索（v1.0.1 新增）
+
+- **位置与交互**：卡片网格**上方**一个搜索输入框（占位文案「搜索名称 / 地址 / 用户名」），**输入即实时过滤**（`computed`，无防抖）；
+  `Esc` 清空并**恢复全部**；**无匹配**时显示空态（复用既有空态组件，文案换成「没有匹配的连接」、不带主按钮）；
+  搜索框只在"确实有连接"时出现（一条都没有时仍是原来的空态）；计数徽标与状态栏**仍是总数**；
+- **搜哪些字段**（`src/search.js`，按 rdp 的**真实**库列）：`name` / `host` / `port` / `username` / `domain`，
+  外加一项**派生**的卡片标题 `[username@]host:port`（与卡片显示共用 `fields.js` 的 `titleOf()`），
+  目的是"照着卡片上看到的文字搜"也能命中（如 `chenzhi@10`）；`host` 为空的畸形条目不参与标题项；
+- **匹配规则**（与另一个用户扩展 `extensions/webapp/src/search.js` **同一套语义 + 同一份 API 形状**）：
+  **大小写不敏感**；对每个字段**分别打分取最优**再按词累加；**子序列匹配**（`chzi` 命中 `chenzhi`）；
+  加权档位 **前缀 > 词首（分隔符 / 驼峰边界）> 连续片段 > 离散子序列**，并叠加"命中密度"（命中越集中分越高）；
+  查询按空白拆词时**全词都要命中**（AND，各词可以落在同一行的不同字段上）；
+- **排序**：按分数**降序**、**同分保持原序**（显式比较原索引）；**空查询 / 纯空白 → 返回全部且保持原序**
+  （列表原有的"最新在前"顺序不变）；
+- **不改数据**：纯前端过滤，不发扩展消息、不新增库列、不影响保存 / 打开 / 删除路径；
+- 门禁：`test/search.test.js`（20 条）逐条钉住上面每一条；规格与取舍见 `docs/spec/rdp-search-box.md`
+  （其中注明本次**取代** spec §4 非目标里的"不做搜索"一项，其余非目标不变）。
 
 ## 13. Windows 的「连接安全对话框」（2026-04 更新后必读）
 

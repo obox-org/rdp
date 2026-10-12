@@ -1,5 +1,23 @@
 <script setup>
-/** 空态（设计 §3.9.1）：居中图标 + 一句话 + 副文案 + 主按钮。 */
+/**
+ * 空态（设计 §3.9.1）：居中图标 + 一句话 + 副文案 + 主按钮。
+ *
+ * 复用两处（**同一套图标与排版**，只有文案与按钮由 props 决定，不另造第二种空态）：
+ * - 一条连接都没有：默认文案 + 「新建第一条连接」，点击 emit `create`（父级开新建模态框）；
+ * - 搜索无匹配（v1.0.1 新增）：`title` / `hint` 换成「没有匹配的连接」，`show-action` 关掉
+ *   （清空搜索走搜索框自己的 `Esc`，这里不重复给按钮）。
+ */
+defineProps({
+  /** 主文案 */
+  title: { type: String, default: '还没有远程连接' },
+  /** 副文案（一行提示） */
+  hint: { type: String, default: '新建一条连接，填好主机和账号，之后点「打开」即可发起远程桌面' },
+  /** 主按钮文案 */
+  actionLabel: { type: String, default: '新建第一条连接' },
+  /** 是否显示主按钮（搜索无匹配时没有"要新建"的语义） */
+  showAction: { type: Boolean, default: true }
+})
+
 const emit = defineEmits(['create'])
 </script>
 
@@ -39,8 +57,10 @@ const emit = defineEmits(['create'])
         stroke-linejoin="round"
       />
     </svg>
-    <p class="empty__title">还没有远程连接</p>
-    <p class="empty__hint">新建一条连接，填好主机和账号，之后点「打开」即可发起远程桌面</p>
-    <button type="button" class="btn btn--primary" @click="emit('create')">新建第一条连接</button>
+    <p class="empty__title">{{ title }}</p>
+    <p class="empty__hint">{{ hint }}</p>
+    <button v-if="showAction" type="button" class="btn btn--primary" @click="emit('create')">
+      {{ actionLabel }}
+    </button>
   </div>
 </template>

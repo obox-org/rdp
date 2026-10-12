@@ -12,9 +12,17 @@ import EmptyState from './components/EmptyState.vue'
 import StatusBar from './components/StatusBar.vue'
 import { callExtension } from './bridge.js'
 import { titleOf, subtitleOf } from './fields.js'
+import { filterAndRank, isSearching } from './search.js'
 
 const rows = ref([])
 const loading = ref(true)
+
+/** 搜索框内容（v1.0.1）：非空时列表只显示命中项，按分数降序 */
+const searchQuery = ref('')
+/** 是否处于"正在搜索"（空 / 纯空白 = 没在搜，直接展示全部） */
+const searching = computed(() => isSearching(searchQuery.value))
+/** 展示用列表：空查询 ⇒ 原样（新→旧）；有查询 ⇒ 过滤 + 按分数降序（同分保原序） */
+const visibleRows = computed(() => filterAndRank(rows.value, searchQuery.value))
 
 const modalOpen = ref(false)
 const modalMode = ref('create')
@@ -273,6 +281,11 @@ function toggleCardError(row) {
   patchState(row.id, { showError: !current.showError })
 }
 
+/** 清空搜索（搜索框上的 Esc）：查询为空 ⇒ computed 直接回到"全部连接、新→旧" */
+function clearSearch() {
+  searchQuery.value = ''
+}
+
 onBeforeUnmount(() => {
   for (const timer of timers.values()) clearTimeout(timer)
   timers.clear()
@@ -302,22 +315,41 @@ refresh()
     <main class="app__content">
       <p v-if="loading" class="app__loading">正在加载连接…</p>
       <EmptyState v-else-if="rows.length === 0" @create="openCreate" />
-      <div v-else class="app__grid">
-        <ConnectionCard
-          v-for="row in rows"
-          :key="row.id"
-          :row="row"
-          :title="titleOf(row)"
-          :subtitle="subtitleOf(row)"
-          :state="stateOf(row).state"
-          :error="stateOf(row).error"
-          :show-error="stateOf(row).showError"
-          @open="openConnection(row)"
-          @edit="openEdit(row)"
-          @delete="askDelete(row)"
-          @toggle-error="toggleCardError(row)"
+      <template v-else>
+        <!-- 搜索框（v1.0.1）：只在确实有连接时出现；输入即过滤，Esc 清空 -->
+        <div class="search">
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="input search__input"
+            placeholder="搜索名称 / 地址 / 用户名"
+            aria-label="搜索连接"
+            @keydown.esc="clearSearch"
+          />
+        </div>
+        <EmptyState
+          v-if="searching && visibleRows.length === 0"
+          title="没有匹配的连接"
+          hint="换个关键词试试；按 Esc 清空搜索框即可恢复全部连接"
+          :show-action="false"
         />
-      </div>
+        <div v-else class="app__grid">
+          <ConnectionCard
+            v-for="row in visibleRows"
+            :key="row.id"
+            :row="row"
+            :title="titleOf(row)"
+            :subtitle="subtitleOf(row)"
+            :state="stateOf(row).state"
+            :error="stateOf(row).error"
+            :show-error="stateOf(row).showError"
+            @open="openConnection(row)"
+            @edit="openEdit(row)"
+            @delete="askDelete(row)"
+            @toggle-error="toggleCardError(row)"
+          />
+        </div>
+      </template>
     </main>
 
     <StatusBar

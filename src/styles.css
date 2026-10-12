@@ -141,6 +141,23 @@ body {
   padding: 20px;
 }
 
+/*
+ * 搜索框（v1.0.1）：卡片网格**上方**一行。只写布局属性——输入框复用既有 `.input`
+ * （底色/描边/字号/圆角全走宿主 token，本文件依旧零色彩字面量）。
+ * 左右内边距与 `.app__grid` 一致（20px）⇒ 输入框左边缘与卡片左边缘对齐；
+ * 下内边距交给网格自己的 20px，两者相加正好是网格上方的留白。
+ */
+.search {
+  display: flex;
+  padding: 20px 20px 0;
+}
+
+/* 输入框吃满整行（`.input` 已是 width:100%，这里补上 flex 场景下的收缩许可） */
+.search__input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .app__loading {
   padding: 20px;
   color: var(--fg-dim);
