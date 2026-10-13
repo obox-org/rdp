@@ -89,7 +89,7 @@ function makeApi(options = {}) {
       connect: async () => {},
       request: async (id, method, params) => {
         calls.requested.push({ id, method, params })
-        return { pid: 4242, warnings: [] }
+        return { pid: null, path: 'C:\\data\\rdp\\1.rdp', warnings: [] }
       },
       close: async () => {},
       onClose: () => ({ dispose() {} })
@@ -185,7 +185,7 @@ test('不得泄漏：密码只出现在 password 的 data.password 里（日志 
   assert.ok(!JSON.stringify(card.data).includes(SECRET_JSON), '卡片列表里不得出现密码')
   assert.ok(
     !JSON.stringify(opened.data).includes(SECRET_JSON),
-    'open 的回包（进状态栏）里不得出现密码'
+    'open 的回包（只进控制台）里不得出现密码'
   )
   assert.ok(!logged().includes(SECRET), `日志里不得出现密码：${logged()}`)
 

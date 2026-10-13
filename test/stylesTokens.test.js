@@ -123,12 +123,18 @@ test('FALLBACK_TOKENS 的键全部在宿主 token 白名单内（兜底表不得
     keys.filter((name) => !HOST_THEME_TOKEN_NAMES.includes(name)),
     []
   )
-  // 兜底表必须覆盖 25 个宿主 token（多一个少一个都是漂移）
-  assert.deepEqual(keys, [...HOST_THEME_TOKEN_NAMES].sort())
+  // ⚠️ 这里**不再**断言"兜底表与宿主白名单逐条相等"：白名单是**宿主**的 25 项（含本界面不消费的
+  // `--statusbar-bg` / `--bg-titlebar` 等），而兜底表按"只放界面真会消费的 token"口径维护
+  // （1.0.3 移除状态栏后是 23 项）。真正的两个方向是：上面这条"兜底 ⊆ 白名单"，
+  // 以及上一条"界面消费的都有兜底"。删除的功能由下面点名的那两条断言负责防复活。
+  assert.ok(keys.length > 0, '兜底表不能是空表')
   for (const [name, value] of Object.entries(FALLBACK_TOKENS)) {
     assert.equal(typeof value, 'string', `${name} 的兜底值应是字符串`)
     assert.ok(value.trim() !== '', `${name} 的兜底值不能为空`)
   }
+  // 状态栏已删除 ⇒ 兜底表不得留 statusbar token（宿主白名单仍是 25 项，不动）
+  assert.ok(!('--statusbar-bg' in FALLBACK_TOKENS), '兜底表不得再留 --statusbar-bg')
+  assert.ok(!('--statusbar-fg' in FALLBACK_TOKENS), '兜底表不得再留 --statusbar-fg')
 })
 
 test('宿主 main.css 的 :root 与白名单逐条一致（token 漂移即红）', (t) => {

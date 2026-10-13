@@ -1,66 +1,28 @@
 <script setup>
 /**
- * 连接卡片（设计 §3.9.1）：标题 user@host:port（等宽、单行省略 + title 全量）、副行、按钮行，
- * 右上角状态点：默认灰 / 打开中蓝脉冲 / 成功绿（2s 后回灰，由父级定时）/ 失败红并保留，点它看错误原文。
+ * 连接卡片（设计 §3.9.1）：标题 user@host:port（等宽、单行省略 + title 全量）、副行、按钮行。
+ *
+ * ⚠️ **1.0.3 起不再有右上角状态点**：灰/蓝/绿/红四态、"打开中"的脉冲与"点开看错误原文"的
+ * 展开区已**整体移除**（用户裁定：提示只写控制台）。随之去掉的还有「打开」按钮上的
+ * `:disabled="state === 'opening'"`——重复点击改由父级的时间窗**静默去重**（`src/dedup.js`），
+ * 界面不加禁用态。取舍见 `docs/adr/0003-mstsc-orphan-launch-via-cmd.md` 与 README §14。
  */
-import { computed } from 'vue'
-
-const props = defineProps({
+defineProps({
   row: { type: Object, required: true },
   title: { type: String, required: true },
-  subtitle: { type: String, default: '' },
-  /** idle | opening | ok | error */
-  state: { type: String, default: 'idle' },
-  /** 失败时的错误原文（有值时状态点可点击展开） */
-  error: { type: String, default: '' },
-  /** 是否已展开错误原文 */
-  showError: { type: Boolean, default: false }
+  subtitle: { type: String, default: '' }
 })
 
-const emit = defineEmits(['open', 'edit', 'delete', 'toggle-error'])
-
-const stateLabel = computed(
-  () =>
-    ({
-      idle: '未连接',
-      opening: '正在打开',
-      ok: '已打开',
-      error: '打开失败'
-    })[props.state] || '未连接'
-)
-
-const dotLabel = computed(() =>
-  props.error ? `${stateLabel.value}：${props.error}（点击查看）` : stateLabel.value
-)
+const emit = defineEmits(['open', 'edit', 'delete'])
 </script>
 
 <template>
   <article class="card">
-    <button
-      v-if="error"
-      type="button"
-      class="dot"
-      :class="`dot--${state}`"
-      :aria-label="dotLabel"
-      :aria-expanded="showError"
-      :title="error"
-      @click="emit('toggle-error')"
-    ></button>
-    <span v-else class="dot" :class="`dot--${state}`" :title="stateLabel" aria-hidden="true"></span>
-
     <h3 class="card__title" :title="title">{{ title }}</h3>
     <p class="card__subtitle">{{ subtitle }}</p>
 
-    <p v-if="error && showError" class="card__error">{{ error }}</p>
-
     <div class="card__actions">
-      <button
-        type="button"
-        class="btn"
-        :aria-label="`打开 ${title}`"
-        :disabled="state === 'opening'"
-        @click="emit('open')"
-      >
+      <button type="button" class="btn" :aria-label="`打开 ${title}`" @click="emit('open')">
         打开
       </button>
       <button type="button" class="btn" :aria-label="`编辑 ${title}`" @click="emit('edit')">

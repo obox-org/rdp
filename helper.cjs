@@ -15,8 +15,11 @@
  *
  * 日志一律走 **stderr**（宿主转发到输出通道）；**stdout 只放协议帧**，多一个字符都会毁掉分帧。
  * 方法：storeCredential / deleteCredential / launch / probe；另有 `--selftest`（不调 cmdkey/mstsc）。
+ * `launch` 不直接 spawn mstsc，而是经 **`cmd /c start`** 派发（让 mstsc 脱离 obox 进程树），
+ * 取舍与实测见 `docs/adr/0003-mstsc-orphan-launch-via-cmd.md`。
  */
 const { execFile, spawn } = require('node:child_process')
+const { existsSync } = require('node:fs')
 const { mkdir, mkdtemp, readFile, rm, writeFile } = require('node:fs/promises')
 const { tmpdir } = require('node:os')
 const { join } = require('node:path')
@@ -26,6 +29,15 @@ const readline = require('node:readline')
 
 /** cmdkey 单次调用超时（毫秒）——凭据写入是本地操作，超时只可能是环境异常 */
 const CMDKEY_TIMEOUT_MS = 15_000
+/**
+ * `cmd /c start` 派发的兜底超时（毫秒）。
+ *
+ * 真机实测 `cmd` 派发 mstsc 后 **49–905ms** 就自己退出（905ms 是 30 层深路径的最坏观测值），
+ * 15s 是 16× 余量。必须要有兜底：`start` 的**目标程序名解析失败**时它会弹"选择打开方式"对话框
+ * 并**挂住 cmd 不退出**（实测 ≥8s 不退），没有超时就会留下僵尸 cmd + 一个永不返回的 IPC 调用
+ * （宿主 60s 后报 timeout，用户看到的是转圈）。见 docs/adr/0003。
+ */
+const START_TIMEOUT_MS = 15_000
 /** JSON-RPC 标准错误码 */
 const RPC_PARSE_ERROR = -32700
 const RPC_INVALID_PARAMS = -32602
@@ -34,12 +46,21 @@ const RPC_INTERNAL_ERROR = -32603
 
 /** lib/cmdkeyArgs.mjs 的绝对 URL（helper 可能以任意 cwd 启动，不能依赖相对解析） */
 const CMDKEY_ARGS_URL = pathToFileURL(join(__dirname, 'lib', 'cmdkeyArgs.mjs')).href
+/** lib/mstscArgs.mjs 的绝对 URL（同上；`cmd /c start` 的参数数组与 mstsc 路径解析） */
+const MSTSC_ARGS_URL = pathToFileURL(join(__dirname, 'lib', 'mstscArgs.mjs')).href
 
 /** 惰性加载纯模块（CJS 不能静态 import ESM；用绝对 URL 避免 cwd 影响） */
 let cmdkeyArgsModule = null
 async function cmdkeyArgs() {
   if (!cmdkeyArgsModule) cmdkeyArgsModule = await import(CMDKEY_ARGS_URL)
   return cmdkeyArgsModule
+}
+
+/** 同上，惰性加载 `lib/mstscArgs.mjs` */
+let mstscArgsModule = null
+async function mstscArgs() {
+  if (!mstscArgsModule) mstscArgsModule = await import(MSTSC_ARGS_URL)
+  return mstscArgsModule
 }
 
 /** 换行统一成 CRLF（`.rdp` 要求 CRLF；已经是 CRLF 的不重复叠加） */
@@ -70,8 +91,9 @@ function assertFileName(fileName) {
  * 脱敏 cmdkey 的错误/输出文本。
  *
  * **必须做**：`execFile` 失败时 `err.message` 是 `Command failed: cmdkey … /pass:<明文>`（实测 stderr
- * 常为空、密码只出现在 `err.message` 里）。这些串会经 `index.js` 的 warnings 进界面状态栏、也会进
- * `console.error`，等于把密码明文写进 UI 与日志。所有对外文本一律先过这里。
+ * 常为空、密码只出现在 `err.message` 里）。这些串会经 `index.js` 的 warnings 进控制台日志
+ * （`console.info`/`console.error`，前缀 `[rdp]`；界面自 1.0.3 起不再显示任何提示），
+ * 等于把密码明文写进日志。所有对外文本一律先过这里。
  */
 function sanitizeCmdkeyText(text) {
   return String(text ?? '').replace(/\/pass:\S+/gi, '/pass:***')
@@ -157,9 +179,77 @@ async function deleteCredential(params = {}) {
 }
 
 /**
+ * 派发 `cmd /c start "" <mstsc> "<.rdp>"` 并等 `cmd` 退出。**退出码 0 即成功**。
+ *
+ * ⚠️ `windowsVerbatimArguments: false` 是**刻意的、且与同文件 `runCmdkey` 的 `true` 相反**：
+ *   - `cmdkey` 用的是**它自己的土解析器**，所以那一边必须传 `true`（参数我们自己拼好、原样传）；
+ *   - `cmd.exe` 用的是**标准命令行解析器**，Node 在 `false` 下的转义（含空白的参数整体加引号）
+ *     正是我们要的。改成 `true` 后，`C:\obox probe\1.rdp` 会在空格处被 `start` 拆成两个 token，
+ *     而 `cmd` **仍然 exit 0** ⇒ 静默走错（单测全绿也发现不了，因为单测不启动真 cmd）。
+ * 理由与真机实测见 `lib/mstscArgs.mjs` 文件头、`docs/adr/0003`、README §9 第 2 条。
+ *
+ * 继承既有语义：`detached: true`（助手若在 cmd 退出前被杀也不连带终止它）、`stdio: 'ignore'`
+ * （不需要 cmd 的输出，错误从退出码/error 事件来）、`windowsHide: true`（cmd 是控制台程序，
+ * 别让窗口闪一下）。`shell` 不设：我们自己就是 `cmd.exe`，再加一层只会多一层解析。
+ *
+ * @param {string[]} args `buildStartArgs()` 的产物（恰好 5 个元素）
+ * @returns {Promise<void>} 成功（退出码 0）时 resolve
+ */
+function startViaCmd(args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn('cmd.exe', args, {
+      windowsVerbatimArguments: false, // 见上：不要照抄 runCmdkey 的 true
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true
+    })
+    let settled = false
+    const timer = setTimeout(() => {
+      if (settled) return
+      settled = true
+      child.kill() // 不留僵尸 cmd（`start` 目标不存在时会挂住不退）
+      reject(new Error(`启动 mstsc.exe 超时（${START_TIMEOUT_MS}ms 未返回）`))
+    }, START_TIMEOUT_MS)
+
+    child.once('error', (err) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      reject(new Error(`启动 mstsc.exe 失败：${err.message}`))
+    })
+    child.once('close', (code, signal) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      if (code === 0) {
+        resolve()
+        return
+      }
+      if (code === null) {
+        reject(new Error(`启动 mstsc.exe 失败：cmd 被信号 ${signal ?? '未知'} 终止`))
+        return
+      }
+      reject(new Error(`启动 mstsc.exe 失败：cmd 退出码 ${code}`))
+    })
+    child.unref()
+  })
+}
+
+/**
  * `launch {rdpText,fileName,credential}`：
- * 按需预置凭据 → 写 `<cwd>/rdp/<fileName>` → `spawn('mstsc.exe',[rdpPath])` detached 并 unref。
- * 返回 `{pid}`（另附 `warnings` 与 `path`：凭据写入失败不阻断打开，但要能提示用户）。
+ * 按需预置凭据 → 解析 mstsc 绝对路径并**先做两项前置校验**（mstsc 存在、路径可安全派发）
+ * → 写 `<cwd>/rdp/<fileName>` → `spawn('cmd.exe', ['/c','start','',mstsc,rdpPath])` 并等 `cmd` 退出码 0
+ * → 返回 `{ pid: null, path, warnings }`。
+ *
+ * `pid` **恒为 null**：经 `cmd /c start` 派发后 mstsc 不是我们的子进程，拿不到 pid；字段保留只是
+ * 为了不改既有契约（阶段 1 已关闭的 Q2）。**代价**：`cmd` 退出码 0 只证明"命令已派发"，
+ * **不证明 mstsc 真的起来了**（真机实测：`.rdp` 指向不存在的盘时 `cmd` 仍 exit 0，由 mstsc
+ * 自己弹框）——所以调用方的文案只能写"已通过 shell 打开"，不能写"已连上"。
+ *
+ * 前置校验写在写文件**之前**：这样"没有 mstsc"与"路径含 %VAR%"两种情况不会留下半个 `.rdp`
+ * 文件。而 `cmd` 失败（非 0/超时）时文件**已经写了**——与现状"先写后 spawn"一致，属既有语义。
+ *
+ * 完整取舍（含被否决的 WMI / explorer 方案与回退动作）见 `docs/adr/0003-mstsc-orphan-launch-via-cmd.md`。
  */
 async function launch(params = {}) {
   const warnings = []
@@ -174,14 +264,22 @@ async function launch(params = {}) {
     }
   }
 
-  const rdpPath = await writeRdpFile(process.cwd(), params.fileName, params.rdpText)
-  const child = spawn('mstsc.exe', [rdpPath], { detached: true, stdio: 'ignore' })
-  const pid = await new Promise((resolve, reject) => {
-    child.once('spawn', () => resolve(child.pid))
-    child.once('error', (err) => reject(new Error(`启动 mstsc.exe 失败：${err.message}`)))
-  })
-  child.unref()
-  return { pid, path: rdpPath, warnings }
+  // ① 目标程序必须先存在：`start` 解析不到程序名时会弹框并挂住 cmd，靠 15s 超时兜太晚也太吵
+  const { buildStartArgs, resolveMstscPath } = await mstscArgs()
+  const mstscExePath = resolveMstscPath()
+  if (!existsSync(mstscExePath)) {
+    throw new Error(`未找到 mstsc.exe（远程桌面客户端）：${mstscExePath}`)
+  }
+
+  // ② 路径护栏（含 %VAR% / 引号 / 换行 ⇒ 在这里就抛，不写文件）
+  const fileName = assertFileName(params.fileName)
+  const rdpPath = join(process.cwd(), 'rdp', fileName)
+  const args = buildStartArgs(mstscExePath, rdpPath)
+
+  // ③ 覆盖写 `.rdp`（逻辑不变）→ ④ 经 cmd 派发并等退出码
+  await writeRdpFile(process.cwd(), fileName, params.rdpText)
+  await startViaCmd(args)
+  return { pid: null, path: rdpPath, warnings }
 }
 
 /** `probe`：环境诊断（界面「环境检查」用；设计 §3.3） */
@@ -304,6 +402,28 @@ async function selftest() {
     // 文件名防护
     assert.throws(() => assertFileName('../escape.rdp'), /fileName 非法/)
     assert.throws(() => assertFileName('a/b.rdp'), /fileName 非法/)
+
+    // cmd 命令行构造的纯函数矩阵（同样**不**启动 cmd/mstsc：真启动会让 --selftest 从"纯自测"
+    // 变成"会弹窗的测试"，与它的既有契约相冲；真机语义属人工验收）
+    const { buildStartArgs, resolveMstscPath } = await mstscArgs()
+    const mstsc = resolveMstscPath({ SystemRoot: 'C:\\WINDOWS' })
+    assert.equal(mstsc, 'C:\\WINDOWS\\System32\\mstsc.exe', 'mstsc 路径应由 SystemRoot 拼出')
+    for (const p of [
+      'C:\\obox probe\\1.rdp',
+      'C:\\会话 #1.rdp',
+      'C:\\a&b\\1.rdp',
+      'C:\\a^b\\1.rdp',
+      'C:\\(a) b\\1.rdp',
+      'C:\\a!b\\1.rdp',
+      'C:\\100% done\\1.rdp'
+    ]) {
+      const args = buildStartArgs(mstsc, p)
+      assert.equal(args.length, 5, 'cmd 参数必须是 5 个')
+      assert.equal(args[2], '', 'start 的空标题占位不能丢')
+      assert.equal(args[4], p, '路径必须原样传（不加引号/不转义）')
+    }
+    assert.throws(() => buildStartArgs(mstsc, 'C:\\%TEMP%\\1.rdp'), /含 %/)
+    assert.throws(() => buildStartArgs(mstsc, 'C:\\a"b\\1.rdp'), /引号或换行/)
 
     console.log(`[rdp-helper] selftest 通过（临时目录 ${dir}，未调用 cmdkey/mstsc）`)
     return 0

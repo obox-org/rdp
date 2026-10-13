@@ -105,7 +105,7 @@ extensions/rdp/
 Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api.app.onMessage）
       ──api.sqlite CRUD──▶ rdp.db（<扩展>/data/rdp.db）
       ──api.secrets──▶ 密码
-      ──api.ipc 'rdp.helper'──▶ helper.cjs（Node）：写 <cwd>/rdp/<id>.rdp → cmdkey → spawn mstsc.exe
+      ──api.ipc 'rdp.helper'──▶ helper.cjs（Node）：写 <cwd>/rdp/<id>.rdp → cmdkey → cmd /c start "" mstsc.exe <rdp>
       ◀──reply──┘  →  host 回 postMessage(obox-extension-reply) → 页面刷新
 ```
 
@@ -116,7 +116,7 @@ Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api
   - `list` → `db.get_all()` → 按 `createdAt` 排序返回
   - `save` → 校验（`lib/connection.mjs`）→ 有 `id` 走 `db.update({id},patch)`，否则 `db.insert(row)`；`remember && password` 时 `api.secrets.set('conn:'+id, password)`
   - `remove` → 先 `helper.deleteCredential`，再 `api.secrets.delete('conn:'+id)`、`db.del(id)`
-  - `open` → 取密码（若有）→ `helper.launch({ rdpText, fileName, credential })` → 返回 `{pid}` 或错误
+  - `open` → 取密码（若有）→ `helper.launch({ rdpText, fileName, credential })` → 返回 `{ pid: null, path, warnings }` 或错误（经 `cmd /c start` 孤儿派发，见 §3.3 与 `docs/adr/0003`）
 - 数据库初始化：`const db = await api.sqlite.open('rdp.db')`（表名 `rdp`，首次 `insert` 自动建表）。
 - 生命周期：`export function uninstall(ctx)` 内遍历 secrets 前缀 `conn:` 删除（宿主不清 secrets）。
 
@@ -127,7 +127,7 @@ Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api
   - 目标串：`TERMSRV/<host>`；当 `port !== 3389` 时**再写一条** `TERMSRV/<host>:<port>`（官方未确认，两条都写）；`domain` 存在时 `user` 传 `DOMAIN\user`。
   - 执行 `cmdkey /generic:<target> /user:<u> /pass:<p>`（`node:child_process.execFile`，逐条 await，带超时）。
 - `deleteCredential {host, port}`：`cmdkey /delete:<target>`（同样两条都试，缺条目不算失败）。
-- `launch {rdpText, fileName, credential}`：先按需 `storeCredential` → 写 `<cwd>/rdp/<fileName>.rdp`（UTF-8 + CRLF，目录不存在则建）→ `spawn('mstsc.exe', [rdpPath], { detached: true, stdio: 'ignore' }).unref()` → 返回 `{pid}`。
+- `launch {rdpText, fileName, credential}`：先按需 `storeCredential` → 解析 mstsc 绝对路径（`%SystemRoot%\System32\mstsc.exe`）+ 前置校验（存在 / 路径可安全派发）→ 写 `<cwd>/rdp/<fileName>.rdp`（UTF-8 + CRLF，目录不存在则建）→ `spawn('cmd.exe', ['/c','start','',mstsc,rdpPath], { windowsVerbatimArguments:false, detached:true, stdio:'ignore', windowsHide:true })` → 等 `cmd` 退出码 0 → 返回 `{ pid: null, path, warnings }`（**退出码 0 只证明命令已派发**，见 `docs/adr/0003` 与 README §14）。
 - `probe`：返回 `{cwd, node: process.versions.node, electron: process.versions.electron, runAsNode: process.env.ELECTRON_RUN_AS_NODE}`（诊断用，UI 的"环境检查"按钮）。
 - `--selftest`：不进协议循环，写一份样例 `.rdp` 到临时目录并回读断言内容，退出码 0/1。
 - **`.rdp` 清理**：每次 `launch` 覆盖写同 id 文件；不做自动清理（文件很小，且便于用户排查）。
@@ -231,16 +231,17 @@ Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api
 │ │                         │  │                         │      │
 │ │ [打开] [编辑] [删除]    │  │ [打开] [编辑] [删除]    │      │
 │ └─────────────────────────┘  └─────────────────────────┘      │
-├───────────────────────────────────────────────────────────────┤
-│ 最近：已打开 chenzhi@10.0.0.8:3389（mstsc pid 12345）          │ ← statusbar 40px（可折叠）
 └───────────────────────────────────────────────────────────────┘
 ```
 
+> **底部状态栏已于 1.0.3 整体移除**（提示只写控制台，见 `docs/adr/0003` 与 README §14）；
+> 卡片右上角的状态点与其"点开看错误原文"展开区也已一并移除。
+
 - **header**：左「远程桌面」标题 + 连接数徽标；右侧主按钮「＋ 新建连接」（`#0e639c`）。sticky，滚动时保持可见（满足"右上角添加按钮"）。
 - **内容区**：`display:grid; grid-template-columns: repeat(auto-fill, minmax(320px,1fr)); gap:16px; padding:20px; overflow:auto`。宽度 <720px 时单列。
-- **卡片**：圆角 8px、`--card` 背景、1px `--border`；结构 = 标题行（`username@host:port`，等宽字体、单行省略 + `title` 悬浮全量）/ 副行（连接名 · 域，可空）/ 按钮行（右对齐）。卡片右上角一个状态点（默认灰；打开中蓝并脉冲；成功绿 2s 后回灰；失败红并保留，点它展开错误原文）。
+- **卡片**：圆角 8px、`--card` 背景、1px `--border`；结构 = 标题行（`username@host:port`，等宽字体、单行省略 + `title` 悬浮全量）/ 副行（连接名 · 域，可空）/ 按钮行（右对齐）。~~卡片右上角一个状态点（默认灰；打开中蓝并脉冲；成功绿 2s 后回灰；失败红并保留，点它展开错误原文）~~ **1.0.3 起已整体移除**：打开的成功/失败只写控制台；重复点击改由父级的 1 秒时间窗静默去重（`src/dedup.js`），界面不加禁用态、不加文案。
 - **空态**：居中 SVG 图标 + 「还没有远程连接」+ 副文案 + 「新建第一条连接」主按钮（与 header 按钮同动作）。
-- **底部状态栏**：一行文本记录**最近一次操作结果**（成功/失败原因原文，如 `cmdkey` 失败时提示"凭据未保存，连接时可能要求输入密码"）。可点击折叠，默认展开。
+- ~~**底部状态栏**：一行文本记录**最近一次操作结果**（成功/失败原因原文，如 `cmdkey` 失败时提示"凭据未保存，连接时可能要求输入密码"）。可点击折叠，默认展开。~~ **1.0.3 起无底部状态栏**：操作结果与 `cmdkey` 告警只写控制台（`console.info`/`console.error`，前缀 `[rdp]`），**界面上不可见**，见 README §14 与 `docs/adr/0003`。
 
 ### 3.9.2 模态框：新建 / 编辑
 
@@ -263,12 +264,12 @@ Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api
 - **常用区**按上表 §3.6 的 `常` 字段分组：连接（名/主机/端口/用户名/域/密码+记住）、显示（全屏/多屏/分辨率/智能缩放/动态分辨率）、本地（剪贴板/音频/键盘钩子）、安全（认证级别/NLA/管理会话/自动重连）。
 - **高级选项**用自绘折叠面板（`▸/▾` + 四组小节 + RemoteApp），组内字段沿用 §3.6 的 `高` 行；**多选一的控件一律是下拉框**，取值说明写在选项文本里（`取值 — 短说明`），更细的一句放在该 `<option>` 的 `title`；`gatewaycredentialssource` 已确证官方取值 0–5，做成下拉框并多一个「留空（不写该键）」选项 ⇒ 运行时不可能再写出非数字；**「未官方确认」角标机制整体删除**（没有字段再用）。
 - **校验**：主机非空、端口 1–65535、连接名非空且列表内唯一；错误在字段下方红字（`--danger`），字段边框转红；有错时「保存」禁用。
-- **交互**：**关闭路径只有按钮**——点遮罩、按 `Esc` 都**不**关闭（只能点「✕」「取消」，或保存成功自动关闭）；`Enter` 提交；提交中按钮禁用并显示 spinner；保存成功即关闭并把新卡片插入列表顶部（乐观更新，失败则回滚并在状态栏显示错误）。
+- **交互**：**关闭路径只有按钮**——点遮罩、按 `Esc` 都**不**关闭（只能点「✕」「取消」，或保存成功自动关闭）；`Enter` 提交；提交中按钮禁用并显示 spinner；保存成功即关闭并把新卡片插入列表顶部（乐观更新，失败则回滚**并把原因写控制台**；模态框内仍显示字段错误行）。
 - **密码**：`type=password` + 眼睛切换；「记住密码」未勾选时**不写** `api.secrets`，并在保存时删除旧值。
 
 ### 3.9.3 删除确认
 
-小模态框（宽 420）：标题「删除连接」，正文 `确定删除「chenzhi@10.0.0.8:3389」？` + 说明「同时清理本机为该主机保存的凭据，操作不可恢复」，按钮 `[取消] [删除]`（危险色实心）。确认后：先 `deleteCredential` → 再删库行 → 列表移除该卡 + 状态栏提示。
+小模态框（宽 420）：标题「删除连接」，正文 `确定删除「chenzhi@10.0.0.8:3389」？` + 说明「同时清理本机为该主机保存的凭据，操作不可恢复」，按钮 `[取消] [删除]`（危险色实心）。确认后：先 `deleteCredential` → 再删库行 → 列表移除该卡 + **控制台日志**。
 
 ### 3.9.4 视觉规范（自带变量）
 
@@ -285,11 +286,11 @@ Vue 页面 ──postMessage(obox-extension)──▶ index.js（主窗口，api
 | `--radius`  | `8px`（模态框 10px）                   | 圆角             |
 | `--mono`    | `Consolas, "Cascadia Mono", monospace` | `user@host:port` |
 
-字号：正文 13px、标题 15px/600、卡片标题 14px、状态栏 12px。间距 4/8/12/16/20 五档。焦点环 `0 0 0 2px var(--accent)`。滚动条按暗色自绘（`::-webkit-scrollbar`）。
+字号：正文 13px、标题 15px/600、卡片标题 14px（~~状态栏 12px~~ 状态栏已于 1.0.3 移除）。间距 4/8/12/16/20 五档。焦点环 `0 0 0 2px var(--accent)`。滚动条按暗色自绘（`::-webkit-scrollbar`）。
 
 ### 3.9.5 无障碍与键盘
 
-Tab 顺序 = header → 卡片（打开/编辑/删除）→ 状态栏；按钮有 `aria-label`（如「打开 chenzhi@10.0.0.8:3389」）；模态框 `role="dialog" aria-modal="true"`、打开时焦点落到第一个输入、关闭后焦点回到触发按钮；**关闭只走按钮**（R-D4：`Esc` 与遮罩点击都不关闭，见 §3.9.2）。
+Tab 顺序 = header → 卡片（打开/编辑/删除）；按钮有 `aria-label`（如「打开 chenzhi@10.0.0.8:3389」）；模态框 `role="dialog" aria-modal="true"`、打开时焦点落到第一个输入、关闭后焦点回到触发按钮；**关闭只走按钮**（R-D4：`Esc` 与遮罩点击都不关闭，见 §3.9.2）。~~状态栏与卡片状态点的 `role="status"` 播报~~ 已随 1.0.3 的移除一起消失（提示只在控制台，屏幕阅读器不会播报）。
 
 ### 3.9.6 主题跟随（非目标，留口）
 
@@ -351,3 +352,6 @@ Tab 顺序 = header → 卡片（打开/编辑/删除）→ 状态栏；按钮�
 | §3.2 / §3.3 关于 `singlemoninwindowedmode` "组合不可达 ⇒ 隐藏"的规则   | 恒隐藏                                                     | **窗口模式（`fullscreen` 为假）时显示**，全屏时隐藏并按默认值回填（M3，见 README「字段可见性与行为变更」）                                                                                  |
 | §3.6 生成规则里的"`\` 与换行做转义防护"                                | 反斜杠要转义                                               | 只**折叠换行**；反斜杠是字面量（`drivestoredrive:s:C:\;E:\;` 依赖它），README「勘误」段已有同款结论                                                                                         |
 | §3.9.3 删除确认的交互                                                  | 同 §3.9.2                                                  | 同 R-D4：只走「取消」「删除」按钮                                                                                                                                                           |
+| §3.2 / §3.3 的 `pid` 判据（`launch → {pid}`、`open` 要求 pid）         | "拿到 mstsc 的 pid 才算成功"                               | **已被 1.0.3 取代**：经 `cmd /c start` **孤儿派发**，mstsc 不是助手的子进程 ⇒ `launch` 返回 `{ pid: null, path, warnings }`，成功判据 = `cmd` 退出码 0（`docs/adr/0003`）                   |
+| §3.9.1 / §3.9.5 的底部状态栏、§3.9.1 的卡片状态点                      | 40px 状态栏记最近一次结果（可折叠）+ 卡片右上角状态点      | **1.0.3 起整体移除**：操作结果与 `cmdkey` 告警**只写控制台**（`[rdp]` 前缀），卡片状态点与"点开看错误原文"也不留；重复点击改由 1 秒静默去重兜住（`docs/adr/0003`、README §14）              |
+| §3.9.4 变量表里 `--ok` 的用途"成功状态点"                              | 卡片状态点的绿色                                           | 状态点已随上一条移除（该变量表本身早已被宿主 token 取代，见本表第一行）                                                                                                                     |

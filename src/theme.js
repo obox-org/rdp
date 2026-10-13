@@ -19,7 +19,14 @@
  * 本模块**顶层零副作用**：所有 DOM 访问都在函数内、且可注入，node 环境下可直接单测。
  */
 
-/** 宿主当前主题 token 的兜底值（= 宿主 dark 默认值，逐条对齐 `src/renderer/src/assets/main.css:2-29`） */
+/**
+ * 宿主当前主题 token 的兜底值（= 宿主 `main.css` 默认色的副本，只列**本界面真的会消费**的 token）。
+ *
+ * ⚠️ 1.0.3 起**不再包含 `--statusbar-bg` / `--statusbar-fg`**：底部状态栏已整体移除，兜底表只放
+ * 界面真会消费的 token（先例 `extensions/webapp/src/theme.js`）。宿主白名单仍是 25 项
+ * （`test/stylesTokens.test.js` 的 `HOST_THEME_TOKEN_NAMES` 不动），因此门禁口径是
+ * **"兜底表 ⊆ 宿主白名单"**，不是"逐条相等"。
+ */
 export const FALLBACK_TOKENS = {
   '--bg': '#1e1e1e',
   '--bg-panel': '#252526',
@@ -38,8 +45,6 @@ export const FALLBACK_TOKENS = {
   '--hover-bg': 'rgba(255, 255, 255, 0.1)',
   '--selection-bg': '#094771',
   '--nav-icon': '#858585',
-  '--statusbar-bg': '#2a2a2a',
-  '--statusbar-fg': '#cccccc',
   '--font-family':
     "-apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', 'PingFang SC', sans-serif",
   '--font-size': '13px',

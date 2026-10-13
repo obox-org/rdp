@@ -1,8 +1,11 @@
 <script setup>
 /**
  * 远程桌面子应用主界面（设计 §3.9.1）。
- * 结构：sticky header（56px）→ 搜索框（有连接时才出现；v1.0.1 引入、v1.0.2 美化）→ 卡片网格 / 空态 → 底部状态栏（40px）；
+ * 结构：sticky header（56px）→ 搜索框（有连接时才出现；v1.0.1 引入、v1.0.2 美化）→ 卡片网格 / 空态；
  * 模态框与删除确认挂在这里。
+ * **底部状态栏已于 1.0.3 整体移除**（用户要求与 `extensions/webapp` 同形态）：所有操作结果与
+ * `cmdkey` 告警**只写控制台**（`console.info`/`console.error`，前缀 `[rdp]`），界面上不出现任何
+ * 提示（卡片右上角的状态点与"点开看错误原文"也一并移除）。详见 README §14 与 `docs/adr/0003`。
  * 数据全部经 bridge.js 的 callExtension(method, payload) 走宿主消息桥，页面内没有 api 对象。
  * 列表展示只用 `visibleRows`（= search.js 的 filterAndRank，见 docs/spec/rdp-search-box.md）。
  */
@@ -11,8 +14,8 @@ import ConnectionCard from './components/ConnectionCard.vue'
 import ConnectionModal from './components/ConnectionModal.vue'
 import DeleteConfirm from './components/DeleteConfirm.vue'
 import EmptyState from './components/EmptyState.vue'
-import StatusBar from './components/StatusBar.vue'
 import { callExtension } from './bridge.js'
+import { createOpenDedup } from './dedup.js'
 import { titleOf, subtitleOf } from './fields.js'
 import { filterAndRank, isSearching } from './search.js'
 
@@ -35,13 +38,13 @@ const saveError = ref('')
 const deleteRow = ref(null)
 const deleting = ref(false)
 
-const statusText = ref('')
-const statusKind = ref('info')
-const statusCollapsed = ref(false)
-
-/** id → { state: idle|opening|ok|error, error, showError } */
-const cardStates = ref({})
-const timers = new Map()
+/**
+ * 「打开」的**静默去重**：同一卡片 1 秒内的重复点击直接忽略。
+ *
+ * 卡片状态点（含"打开中"的禁用态）已随状态栏一起移除，所以双击不会再被 `disabled` 挡住；
+ * 这里按用户裁定的时间窗补上，且**界面不出现任何变化**（不加禁用态、不加文案、不写日志）。
+ */
+const openDedup = createOpenDedup()
 
 const connectionsText = computed(() => `⟨${rows.value.length} 个连接⟩`)
 
@@ -49,25 +52,21 @@ const connectionsText = computed(() => `⟨${rows.value.length} 个连接⟩`)
 let triggerEl = null
 const createButton = ref(null)
 
+/**
+ * 记录一次操作结果。
+ *
+ * ⚠️ **用户已要求界面不显示操作/错误提示**（底部状态栏整体移除），因此这里**只写控制台**、不写任何 UI。
+ *
+ * 为什么保留全部调用点而不是把调用删掉：这些日志是**唯一的诊断通道**
+ * （子窗口日志会经主进程转发到终端，前缀 `[child-renderer:*]`）。
+ * 出问题时让用户开 DevTools / 看终端即可还原完整过程。
+ *
+ * @param {'info'|'ok'|'error'} [kind] 成功走 `console.info`、失败走 `console.error`
+ * @param {string} text 面向人的一句话
+ */
 function setStatus(kind, text) {
-  statusKind.value = kind
-  statusText.value = text
-}
-
-function stateOf(row) {
-  return cardStates.value[row.id] || { state: 'idle', error: '', showError: false }
-}
-
-function patchState(id, patch) {
-  cardStates.value = { ...cardStates.value, [id]: { ...stateOf({ id }), ...patch } }
-}
-
-function clearTimer(id) {
-  const timer = timers.get(id)
-  if (timer) {
-    clearTimeout(timer)
-    timers.delete(id)
-  }
+  if (kind === 'error') console.error(`[rdp] ${text}`)
+  else console.info(`[rdp] ${text}`)
 }
 
 function rememberTrigger() {
@@ -110,7 +109,7 @@ async function refresh() {
 }
 
 /**
- * 静默对账：保存/删除这类乐观更新失败后，用扩展的真实数据回填（不改状态栏文案）。
+ * 静默对账：保存/删除这类乐观更新失败后，用扩展的真实数据回填（不写额外提示）。
  * 例：扩展报「连接已保存，但密码未保存」——库行其实写进去了，本地回滚反而会与库不一致。
  */
 async function reconcile() {
@@ -118,11 +117,11 @@ async function reconcile() {
     const data = await callExtension('list', {})
     rows.value = newestFirst(Array.isArray(data) ? data : [])
   } catch {
-    /* 对账失败就保留本地回滚结果，状态栏已有错误原因 */
+    /* 对账失败就保留本地回滚结果，错误原因已写进控制台日志 */
   }
 }
 
-/** 扩展返回的 warnings（如「本机凭据未清理」）拼进状态栏文案 */
+/** 扩展返回的 warnings（如「本机凭据未清理」）拼进写控制台的那句话 */
 function warningSuffix(data) {
   const list = Array.isArray(data?.warnings) ? data.warnings.filter(Boolean) : []
   return list.length > 0 ? `（${list.join('；')}）` : ''
@@ -220,27 +219,15 @@ async function saveConnection(payload) {
 
 function openConnection(row) {
   const id = row.id
-  clearTimer(id)
-  patchState(id, { state: 'opening', error: '', showError: false })
+  // 静默去重：1 秒内的重复点击**直接返回**——不派发、不改界面、不写日志（见 src/dedup.js）
+  if (openDedup.shouldIgnore(id)) return
   callExtension('open', { id })
     .then((data) => {
-      const pid = data && typeof data === 'object' ? data.pid : data
-      patchState(id, { state: 'ok', error: '', showError: false })
-      setStatus(
-        'ok',
-        `已打开 ${titleOf(row)}${pid ? `（mstsc pid ${pid}）` : ''}${warningSuffix(data)} · Windows 安全框里本地资源默认全不勾（剪贴板等），需要就勾上`
-      )
-      // 成功绿保留 2s 再回灰
-      timers.set(
-        id,
-        setTimeout(() => {
-          timers.delete(id)
-          patchState(id, { state: 'idle', error: '', showError: false })
-        }, 2000)
-      )
+      // 不再读 data.pid：经 cmd /c start 派发拿不到 pid（见 docs/adr/0003）。
+      // "已派发"不等于"已连上"——所以文案只承诺派发（spec §4 第 4 条）。
+      setStatus('ok', `已通过 shell 打开 ${titleOf(row)}${warningSuffix(data)}`)
     })
     .catch((err) => {
-      patchState(id, { state: 'error', error: err.message, showError: false })
       setStatus('error', `打开 ${titleOf(row)} 失败：${err.message}`)
     })
 }
@@ -265,7 +252,7 @@ async function confirmDelete() {
   if (index >= 0) rows.value.splice(index, 1)
   try {
     const result = await callExtension('remove', { id })
-    clearTimer(id)
+    openDedup.forget(id) // 该 id 已消失，别让它把将来（万一复用）的点击挡在窗口外
     setStatus('ok', `已删除 ${titleOf(row)}，并清理本机保存的凭据${warningSuffix(result)}`)
   } catch (err) {
     if (backup && index >= 0) rows.value.splice(index, 0, backup)
@@ -278,19 +265,13 @@ async function confirmDelete() {
   }
 }
 
-function toggleCardError(row) {
-  const current = stateOf(row)
-  patchState(row.id, { showError: !current.showError })
-}
-
 /** 清空搜索（搜索框上的 Esc）：查询为空 ⇒ computed 直接回到"全部连接、新→旧" */
 function clearSearch() {
   searchQuery.value = ''
 }
 
 onBeforeUnmount(() => {
-  for (const timer of timers.values()) clearTimeout(timer)
-  timers.clear()
+  openDedup.clear()
 })
 
 refresh()
@@ -362,24 +343,13 @@ refresh()
             :row="row"
             :title="titleOf(row)"
             :subtitle="subtitleOf(row)"
-            :state="stateOf(row).state"
-            :error="stateOf(row).error"
-            :show-error="stateOf(row).showError"
             @open="openConnection(row)"
             @edit="openEdit(row)"
             @delete="askDelete(row)"
-            @toggle-error="toggleCardError(row)"
           />
         </div>
       </template>
     </main>
-
-    <StatusBar
-      :text="statusText"
-      :kind="statusKind"
-      :collapsed="statusCollapsed"
-      @toggle="statusCollapsed = !statusCollapsed"
-    />
 
     <ConnectionModal
       v-if="modalOpen"

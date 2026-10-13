@@ -1,7 +1,8 @@
 # 远程桌面（obox 用户扩展）
 
 在 obox 的「应用」里提供一个 RDP 连接管理器：卡片列表（标题 `username@IP:Port`，列表上方带搜索框）、新建 / 编辑 / 删除确认 / 打开。
-打开时生成 `.rdp` 文件 → 用 `cmdkey` 预置 Windows 凭据（密码不用手输）→ 拉起 `mstsc.exe`。
+打开时生成 `.rdp` 文件 → 用 `cmdkey` 预置 Windows 凭据（密码不用手输）→ 经 `cmd /c start` 以**孤儿进程**
+拉起 `mstsc.exe`（**不在 obox 进程树内**，obox 退出/被杀都不影响它；见 §14）。
 
 - 形态：**用户扩展**（`.oix` 分发），只贡献一个 App 卡片，界面只中文
 - 平台：**仅 Windows**（依赖 `mstsc.exe` / `cmdkey.exe`）
@@ -15,16 +16,17 @@ index.js               入口（纯 ESM）：App 卡片 + 6 个方法（list/sav
 helper.cjs             Node 助手：storeCredential / deleteCredential / launch / probe / --selftest
 lib/rdpFile.mjs        .rdp 文本生成（字段表 §3.6、CRLF、转义防护）
 lib/cmdkeyArgs.mjs     cmdkey 参数拼装（TERMSRV 目标串策略）
+lib/mstscArgs.mjs      cmd 命令行构造（`/c start` 的参数数组 + 转义护栏 + mstsc 绝对路径解析）
 lib/connection.mjs     连接校验 / 归一 / 序列化（卡片标题、库行）
-src/**                 Vue 3 子应用源码（构建到 ui/，与源码分目录；src/theme.js = 主题接收桥 + 兜底 token；src/search.js = 卡片搜索匹配器，纯函数）
+src/**                 Vue 3 子应用源码（构建到 ui/，与源码分目录；src/theme.js = 主题接收桥 + 兜底 token；src/search.js = 卡片搜索匹配器；src/dedup.js = 「打开」的 1 秒静默去重；均为纯函数）
 ui/**                  Vite 构建产物（`ui/index.html` + `ui/assets/*`）
-test/*.test.js         node --test（lib 三个纯模块 + 入口消息契约 + helper 集成 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本 / 搜索匹配器）
+test/*.test.js         node --test（lib 四个纯模块 + 入口消息契约 + helper 集成 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本 / 搜索匹配器 / 打开去重）
 scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 ```
 
 ## 2. 安装
 
-1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.2.oix`；
+1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.3.oix`；
 2. **拖拽**：把 `.oix` 直接拖进扩展管理器视图。
 
 安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp_chenzhi`，即 `<name>_<author>`，所以不要硬编码 `app://extensions/rdp/`）。
@@ -65,18 +67,18 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 
 `result` 就是入口 handler 的返回值（宿主把它放进 reply 的 `data`）。六个方法：
 
-| method     | payload                   | data                                                         |
-| ---------- | ------------------------- | ------------------------------------------------------------ |
-| `list`     | `{}`                      | 连接行数组（按 `createdAt` 升序，附 `title`/`address`）      |
-| `save`     | 连接对象（编辑时含 `id`） | 保存后的行（含 `id`、时间戳）                                |
-| `remove`   | `{ id }`                  | `{ id, warnings: string[] }`（凭据/密码清理失败进 warnings） |
-| `open`     | `{ id }`                  | `{ pid, warnings: string[] }`（`pid` = 拉起的 `mstsc.exe`）  |
-| `probe`    | `{}`                      | helper 的环境信息 `{ cwd, node, electron, runAsNode }`       |
-| `password` | `{ id }`                  | `{ password }`——已存密码（读不到就是 `''`，**不报错**）      |
+| method     | payload                   | data                                                                              |
+| ---------- | ------------------------- | --------------------------------------------------------------------------------- |
+| `list`     | `{}`                      | 连接行数组（按 `createdAt` 升序，附 `title`/`address`）                           |
+| `save`     | 连接对象（编辑时含 `id`） | 保存后的行（含 `id`、时间戳）                                                     |
+| `remove`   | `{ id }`                  | `{ id, warnings: string[] }`（凭据/密码清理失败进 warnings）                      |
+| `open`     | `{ id }`                  | `{ pid: null, path, warnings }`（经 `cmd /c start` 孤儿派发，拿不到 pid，见 §14） |
+| `probe`    | `{}`                      | helper 的环境信息 `{ cwd, node, electron, runAsNode }`                            |
+| `password` | `{ id }`                  | `{ password }`——已存密码（读不到就是 `''`，**不报错**）                           |
 
 - 失败一律 `{ ok:false, error:'中文可读文案' }`（handler 不抛错，桥信封尽量简单）；
 - `channel` 也可以是方法名本身（`channel:'list'`, `payload:{}`），入口两种写法都认；
-- `open` 的 `warnings` 里会出现「凭据未保存，连接时可能要求输入密码」这类提示（`cmdkey` 失败**不阻断**打开）。界面当前只展示成功/失败，warnings 是留给界面后续展示的。
+- `open` 的 `warnings` 里会出现「凭据未保存，连接时可能要求输入密码」这类提示（`cmdkey` 失败**不阻断**打开）。界面**不展示**任何提示（状态栏已移除）；warnings 与成败原因只进控制台（见 §14）。
 
 ### 4.1 密码：编辑时回填、可查看、清空即删除
 
@@ -163,7 +165,8 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 - **仅 Windows**：`mstsc.exe` / `cmdkey.exe` 是硬依赖，其它平台无法打开连接；
 - **非默认端口的凭据目标串未官方确认**：官方只说明 `TERMSRV/<主机>`。本扩展在端口 ≠ 3389 时**同时写** `TERMSRV/<主机>` 与 `TERMSRV/<主机>:<端口>`（删除时两条都试），实际哪条生效请用 `cmdkey /list` 核对；
 - **未采用 `password 51:b:`**：那是 DPAPI 用户+本机绑定的密文 blob，不可分发，且本机没有取密文的正规接口。密码走 `cmdkey`（密码会出现在 `cmdkey` 的 argv 里，与手敲命令同级，属已知接受的风险）；
-- **真实会话未验证**：验收止于"拉起 `mstsc.exe`"（进程起来即结束），多显示器 / 全屏 / 音频 / 网关 / RemoteApp 与会话内的真实效果**没有实机验证**；
+- **真实会话未验证**：验收止于"`cmd` 退出码 0 且 `mstsc.exe` 进程出现"（随即结束，不进入会话；命令**已派发**≠已连上，见 §14），多显示器 / 全屏 / 音频 / 网关 / RemoteApp 与会话内的真实效果**没有实机验证**；
+- **超长路径（>260 字符）与 UNC 路径未验证**：真机只验证过 30 层深目录（`cmd` 905ms、exit 0 成功）；`\\?\` 前缀不支持 `.rdp` 语义，`mstsc` 对 UNC 的行为未验证；
 - `gatewaycredentialssource:i:` 的官方取值**已确证为 0–5**（0 询问密码 NTLM / 1 智能卡 / 2 用当前登录用户凭据 / 3 提示输入凭据并用基本认证 / 4 稍后由用户选择 / 5 基于 Cookie 认证，见 §11 的来源表）；界面是**下拉框**（含「留空（不写该键）」），留空即不写该键；
 - **`use multimon:i:` 的官方默认值两版文档不一致**（当前 _Supported RDP properties_ 写 `1`、旧版 _Supported Remote Desktop RDP file settings_ 写 `0`）：全屏关闭时本扩展**不写该键**，是否该显式写 `use multimon:i:0` **未真机验证**；
 - IPv6 主机未验证（`full address:s:` 未做 `[::1]` 方括号处理，按主机名/IPv4 口径拼装）；
@@ -201,13 +204,28 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 命中 `TERMSRV/<主机>` 与用户名 → 删除后消失）**全部成功**；`launch` 能写出 `.rdp` 并真的拉起
 `mstsc.exe`（验证时随即结束进程，不进入真实会话）。
 
+**1.0.3 的启动方式实测（同一台机器，探针用 `notepad.exe` / `cmd /c echo` 替身）**：
+
+- `cmd /c start "" <目标> "<路径>"`（`windowsVerbatimArguments` 缺省 = `false`）能把路径**原样**交给被启动的进程：
+  空格、中文、`&`、`^`、`(`、`)`、`!`、`|`、`<`、`>`、**不配对的 `%`** 全部原样到达；
+  **唯一例外是 `%VAR%`** 会被 cmd 展开（`%TEMP%` 变成真实临时目录）⇒ 本扩展**拒绝**含 `%VAR%` 的路径（见 §14）；
+- `cmd` **立即退出**：`exit` 事件在 49/50/56/62/65ms 触发、退出码 **0**（30 层深路径最坏 905ms，仍 0）；
+- **父进程确实变成已退出的 `cmd`**：`cmd` pid=15976 退出 62ms 后，被启动进程的 `ParentProcessId=15976`，
+  而该 pid 已查不到（同一时刻 node 仍存活）；
+- **失败的三种真实形态**：① `start` 一个**不存在的程序名** ⇒ `cmd` **不退出**（≥8s，会弹"选择打开方式"对话框）
+  ⇒ 所以先 `existsSync(mstsc.exe)`；② `.rdp` 指向不存在的盘 ⇒ `cmd` **仍 exit 0**（mstsc 自己弹框）
+  ⇒ 所以"已通过 shell 打开"不等于"已连上"；③ 非 `.rdp` 文件喂给 mstsc ⇒ `cmd` **仍 exit 0**。
+  （真机到"真的 mstsc 且父进程已断链"的验收清单见扩展 spec §16.2，本扩展**未**在真机上跑完那几条。）
+
 **失败时的降级**：`cmdkey` 任何一步失败都**不阻断**打开——`open` 返回 `warnings`（例如
 「凭据未保存，连接时可能要求输入密码」），`mstsc` 仍会启动，由 Windows 自己弹凭据框。
 
 ### 勘误（阶段七审视后修正的断言）
 
 - **数据目录不是同一个**：调试态 `extId=rdp`、helper 的 cwd 是**调试目录**/data；安装态 `extId=rdp_chenzhi`（`<name>_<author>`），库在 `userData/extensions/rdp_chenzhi/data/`。本文档早前把两者混为一谈的表述以本段为准。**验收「覆盖安装后连接列表仍在」必须用安装态跑**（调试态不经过 `.oix` 安装流程）。
-- **`warnings` 是会展示的**：界面把 `open`/`remove` 返回的 `warnings` 拼进状态栏，不是"留给后续"。
+- **`warnings` 只进控制台（1.0.3 起）**：状态栏已整体移除，`open`/`remove` 的 `warnings` 与操作结果一律
+  `console.info`/`console.error`（前缀 `[rdp]`），**界面上不可见**——要看就开 DevTools 或看 obox 终端
+  （见 §14「已知行为」）。
 - **`lib/**` 在设计里已列入打包清单**（design §3.7 含 lib 并说明原因）；早前"设计漏了 lib"的说法不成立。
 - **`.rdp` 文本处理**：只折叠换行（`.rdp` 无法表达多行值），**不转义反斜杠**——反斜杠是 Windows 路径/域名的正常字符，原样保留才正确；design §3.6 里"`\` 与换行做转义防护"的措辞按此理解。
 
@@ -225,7 +243,7 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 约定（改这里的任何一条都要同步宿主侧协议）：
 
 - **token 来源 = 宿主推送**，扩展**不维护 token 值**；收到后逐条 `documentElement.style.setProperty(k, v)`；
-- **首帧兜底**在 `src/theme.js` 的 `FALLBACK_TOKENS`（25 个宿主 token 的 dark 默认值副本）：模块脚本一执行就**同步**写入，
+- **首帧兜底**在 `src/theme.js` 的 `FALLBACK_TOKENS`（**只列本界面真的会消费**的宿主 token，1.0.3 移除状态栏后是 23 个）：模块脚本一执行就**同步**写入，
   因此"推送还没到"时界面也是可读的深色，不空白、不报错（3 次请求都没响应时打印一次 warn）；
   **这是明写的技术债**（宿主默认色的副本，会随宿主漂移，只在"拿不到推送"时可感知）——取舍与退场条件见 `docs/adr/0002-app-window-theme-bridge-and-fallback.md`；
 - **仅兜底状态下的可读性**（N1）：输入类控件用到的每个 token 都必须有兜底值，且**输入框底色不得与其容器底色相同/同色**
@@ -309,7 +327,7 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 
 - **位置与交互**：卡片网格**上方**一个搜索输入框（占位文案「搜索名称 / 地址 / 用户名」），**输入即实时过滤**（`computed`，无防抖）；
   `Esc` 清空并**恢复全部**；**无匹配**时显示空态（复用既有空态组件，文案换成「没有匹配的连接」、不带主按钮）；
-  搜索框只在"确实有连接"时出现（一条都没有时仍是原来的空态）；计数徽标与状态栏**仍是总数**；
+  搜索框只在"确实有连接"时出现（一条都没有时仍是原来的空态）；计数徽标**仍是总数**（状态栏已于 1.0.3 移除）；
 - **形态（v1.0.2 起）**：胶囊形 + 内嵌放大镜（图标色走 `--fg-dim`、聚焦转 `--accent`）+ **宽度上限 400px**（窄窗自动收窄）；
   只用布局属性，仍是**零自造色值**、零字体族字面量（`test/stylesTokens.test.js` / `test/fallbackInputs.test.js` 继续绿）；
   v1.0.1 周期引入的搜索框先是 `width: 100%` 的扁平通栏版（1000px 窗口下像一行空表单），v1.0.2 只改形态、**匹配语义一行未动**；
@@ -348,3 +366,73 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 1. 连接时在框里**只勾本次要用的资源**（要用剪贴板就勾「剪贴板」），其余保持不勾——这也是微软推荐的最小化原则；
 2. 勾选**每次连接都要做**（该框对 `.rdp` 文件方式每次都会出现）；
 3. 企业环境若确需回退旧行为，管理员可设 `HKLM\Software\Policies\Microsoft\Windows NT\Terminal Services\Client` → `RedirectionWarningDialogVersion`（DWORD）= `1`；官方标注"将来的 Windows 更新可能会删除对此设置的支持"，且属于安全降级，请自行评估。本扩展**不修改**该注册表。
+
+## 14. 启动方式与已知行为（1.0.3 起：为什么用 cmd / 提示只在控制台）
+
+完整取舍（被否决的 WMI / explorer 方案、退出码判据的代价、回退方案）见
+[`docs/adr/0003-mstsc-orphan-launch-via-cmd.md`](docs/adr/0003-mstsc-orphan-launch-via-cmd.md)。这里只写使用者/维护者要知道的部分。
+
+### 14.1 为什么绕一层 shell（孤儿进程）
+
+`launch` 不再直接 `spawn('mstsc.exe', …)`，而是
+
+```js
+spawn('cmd.exe', ['/c', 'start', '', '%SystemRoot%\\System32\\mstsc.exe', '<.rdp 绝对路径>'])
+```
+
+`cmd` 在 ~60ms 内自己退出，于是 **`mstsc.exe` 的父进程是一条已经结束的 `cmd`**：
+
+- **任务管理器 / Process Explorer 里看不到 `obox.exe → 助手 → mstsc.exe` 这条链**（mstsc 的 `ParentProcessId` 指向的进程已不存在）；
+- **关掉 obox（正常退出或强杀）后，已经打开的远程桌面窗口仍在**——这是结构上的保证，不是"宿主恰好没做树杀"的侥幸
+  （宿主结束 IPC 助手时只 `child.kill()` 直接子进程，`src/main/ipcTransport.ts:120-124`；宿主里唯一的 `/T` 树杀只服务 python 运行器）。
+
+**验收方法**（pwsh）：
+
+```powershell
+# ① 父进程不是 obox / 助手：mstsc 的 ParentProcessId 查不到活进程，且不在 obox/助手的 pid 集合里
+Get-CimInstance Win32_Process -Filter "Name='mstsc.exe'" | Select-Object ProcessId, ParentProcessId, CommandLine
+Get-Process -Id <上面的 ParentProcessId> -ErrorAction SilentlyContinue   # 期望：查不到
+# ② 关掉 obox 后 mstsc 仍在
+(Get-Process mstsc -ErrorAction SilentlyContinue | Measure-Object).Count  # 关 obox 前后各看一次，期望不减
+```
+
+### 14.2 已知行为：**"已通过 shell 打开"不等于"已连上"**
+
+成功判据是 **`cmd` 的退出码 0**，它只证明"命令已经派发出去了"。真机实测：把 `.rdp` 指向一个**不存在的盘**
+（`Z:\definitely\missing\dir\x.rdp`）时 `cmd` **仍然 exit 0**，后续报错由 `mstsc` 自己弹框完成。
+所以：
+
+- 日志文案只写"**已通过 shell 打开 …**"，不写"已连接"；
+- 打开前会先确认 `%SystemRoot%\System32\mstsc.exe` 存在（不存在 ⇒ 明确报错，不会静默）；
+- 用户可控的字段（连接名/主机/端口/用户名…）只进 `.rdp` **文件内容**，**不进命令行**：命令行里只有
+  `<SystemRoot>\System32\mstsc.exe` 与 `<扩展 data 目录>/rdp/<正整数 id>.rdp` 两个由扩展自己拼出的绝对路径。
+  含 `%VAR%` 的路径会被**拒绝**（cmd 会把它展开成别的目录，属静默改写，比失败更糟）。
+
+### 14.3 已知行为：**操作结果与告警只在控制台，界面上不显示**
+
+1.0.3 起界面**没有底部状态栏**（与另一个用户扩展 `webapp` 同形态），卡片右上角的状态点与"点开看错误原文"
+也一并移除，因此：
+
+- 成功 / 失败 / **`cmdkey` 告警**（如「凭据可能未保存（TERMSRV/h）」「凭据未保存，连接时可能要求输入密码」）
+  一律只写控制台，前缀 `[rdp]`，例如
+  `[rdp] 已通过 shell 打开 chenzhi@10.0.0.8:3389`、`[rdp] 打开 … 失败：未找到 mstsc.exe（远程桌面客户端）：C:\Windows\System32\mstsc.exe`；
+- **怎么看**：① 子窗口里按 `Ctrl+Shift+I` 开 DevTools 的控制台；② 或看 obox 终端——子窗口日志会经宿主转发，
+  前缀 `[child-renderer:*]`，用 `[rdp]` 关键词 grep 最快；
+- **代价（明写）**：不开 DevTools 时，正常路径下**看不到任何提示**（连"卡片变红"都没有了）；
+  `role="status"` 的无障碍播报点也随状态栏消失（控制台日志不被屏幕阅读器播报）；
+- 重复点击的挡板也换了：**同一卡片 1 秒内的重复点击直接忽略**（`src/dedup.js`），界面不出现任何变化
+  （不加禁用态、不加文案）。窗口是固定 1 秒、**不跟随请求时长**：`open` 慢于 1 秒时第二次点击会被放行，
+  仍可能开出两个窗口。
+
+### 14.4 别把 `windowsVerbatimArguments` 改成 `true`
+
+同一个仓库里两个**相反**取值，理由完全不同（见 §9 第 2 条）：
+
+| 调用                       | 取值                | 为什么                                                                                        |
+| -------------------------- | ------------------- | --------------------------------------------------------------------------------------------- |
+| `cmdkey`（`runCmdkey`）    | `true`              | `cmdkey` 用它**自己的土解析器**，必须旁路 Node 的转义（参数由 `quoteForCmdkey` 拼好、原样传） |
+| `cmd.exe`（`startViaCmd`） | `false`（**写死**） | `cmd.exe` 用**标准命令行解析器**，Node 的转义正是我们要的                                     |
+
+改成 `true` 的后果：`.rdp` 路径含空格时 `start` 只拿到半截 token，而 `cmd` **仍然 exit 0** ⇒ **静默走错**，
+且现有单测全绿（单测不启动真 `cmd`）。防线：代码里写死取值 + 注释、`lib/mstscArgs.mjs` 的纯函数矩阵、
+以及 §14.1 的真机验收。

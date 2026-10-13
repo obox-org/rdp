@@ -7,7 +7,8 @@
  * - `api.sqlite.open('rdp.db')` 存连接（扁平列，字段名与界面 fields.js 一一对应）
  * - `api.secrets` 存密码（键 `conn:<id>`，密码**不入库**）
  * - `api.ipc` 通道 `rdp.helper`（manifest 静态声明，stdio + ndjson）拉起 helper.cjs：
- *   它负责写 `.rdp`、`cmdkey` 预置凭据、`spawn mstsc.exe`
+ *   它负责写 `.rdp`、`cmdkey` 预置凭据、**经 `cmd /c start` 以孤儿进程派发 `mstsc.exe`**
+ *   （mstsc 因此不在 obox 进程树内，见 `docs/adr/0003`）
  *
  * 消息契约（与 `src/bridge.js` 对齐）：
  *   页面 → 宿主：`{ source:'obox-app', action:'obox-extension', appId:'rdp.main', channel:'rdp',
@@ -54,8 +55,8 @@ function isTruthyFlag(value) {
  * secrets 异常文本的兜底脱敏：把**已知密码**从文案里擦掉，再交给界面/日志。
  *
  * 宿主的 `api.secrets` 异常理论上不含明文，但它的 message 由底层实现决定、不受本扩展控制；
- * 一旦它把值带进 message，就会经 `fail()` 的回包进界面状态栏（违反"界面里不得出现密码"）。
- * 有值就擦，没值原样返回。
+ * 一旦它把值带进 message，就会经 `fail()` 的回包进控制台日志（`console.error`；界面自 1.0.3 起
+ * 不显示任何提示）。有值就擦，没值原样返回。
  */
 function secretErrorText(err, secret) {
   const text = messageOf(err)
@@ -283,7 +284,7 @@ export default function rdp(api) {
     return ok({ id, warnings })
   }
 
-  /** open：取密码（可空）→ 生成 .rdp → helper 预置凭据并拉起 mstsc */
+  /** open：取密码（可空）→ 生成 .rdp → helper 预置凭据并经 cmd /c start 派发 mstsc */
   async function open(params) {
     const id = toId((params ?? {}).id)
     if (id === null) return fail('open 需要合法的 id')
@@ -314,20 +315,20 @@ export default function rdp(api) {
       credential
     })
     if (result && Array.isArray(result.warnings)) warnings.push(...result.warnings)
-    // 没有 pid 就是**没拉起 mstsc**：不能再静默当成功（真机踩过：界面显示"已打开"、
-    // 磁盘上没有 .rdp、进程里也没有 mstsc，完全无从排查）。这里显式失败并打印原始回复。
-    const pid = result && typeof result === 'object' ? result.pid : null
-    if (!pid) {
+    // 判据换成"helper 有没有真的派发成功"：helper 失败时**抛错**（JSON-RPC error），走不到这里；
+    // 能走到这里且 reply 是对象 ⇒ 已派发。**不再要求 pid**——经 cmd /c start 派发时 mstsc
+    // 不是我们的子进程，拿不到 pid（见 docs/adr/0003）；`pid` 字段保留只是不改既有契约（恒 null）。
+    if (!result || typeof result !== 'object') {
       let raw
       try {
         raw = JSON.stringify(result)
       } catch {
         raw = String(result)
       }
-      console.warn('[rdp] launch 未返回 pid，helper 原始回复：', raw)
+      console.warn('[rdp] launch 回复不是对象，helper 原始回复：', raw)
       return fail(`未能拉起 mstsc.exe（helper 回复：${raw ?? '空'}）`)
     }
-    return ok({ pid, warnings })
+    return ok({ pid: result.pid ?? null, path: result.path ?? null, warnings })
   }
 
   /** probe：透传 helper 的环境信息（界面「环境检查」） */
@@ -356,7 +357,7 @@ export default function rdp(api) {
   const card = api.app.register({
     id: APP_ID,
     name: '远程桌面',
-    version: '1.0.2',
+    version: '1.0.3',
     author: 'chenzhi',
     description: 'RDP 连接管理：卡片列表 / 新建 / 编辑 / 删除确认 / 打开（mstsc）',
     icon: CARD_ICON,

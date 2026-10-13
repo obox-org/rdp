@@ -8,8 +8,9 @@
  * 所以这里把"必须存在的接线"与"绝不能回来的写法"钉在源码文本上。
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { fileURLToPath } from 'node:url'
 
 /** 去掉块注释 / HTML 注释 / 行注释，避免"文档里的示例字符串"把断言喂成假绿 */
 function source(name) {
@@ -19,9 +20,20 @@ function source(name) {
     .replace(/^[ \t]*\/\/.*$/gm, '')
 }
 
+/** 同上，但读 `src/` 下的任意文件（`App.vue` / `styles.css` 不在 `components/` 里） */
+function srcFile(rel) {
+  return readFileSync(new URL(`../src/${rel}`, import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/^[ \t]*\/\/.*$/gm, '')
+}
+
 const MODAL = source('ConnectionModal.vue')
 const FIELD = source('ConnectionField.vue')
 const DELETE = source('DeleteConfirm.vue')
+const CARD = source('ConnectionCard.vue')
+const APP = srcFile('App.vue')
+const STYLES = srcFile('styles.css')
 
 test('M1：ConnectionModal 的 form 必须由 props.row 经 watch 同步（不得回退成 reactive(rowToForm(...))）', () => {
   // 修复点 1：空壳 + watch 同步（props 是唯一真源）
@@ -113,6 +125,76 @@ test('P1：密码框的「显示/隐藏」切换必须在控件层，且默认�
     FIELD.includes(':value="form[field.key]"'),
     '输入框必须绑表单值——回填后（form.password 有值）才能显示出来'
   )
+})
+
+test('状态栏已移除（1.0.3）：组件、模板用法、状态字段与 CSS 规则都不得复活', () => {
+  assert.ok(!APP.includes('StatusBar'), 'App.vue 不得再引用 StatusBar')
+  assert.ok(!APP.includes('statusText'), 'App.vue 不得再有 statusText 状态')
+  assert.ok(!APP.includes('statusKind'), 'App.vue 不得再有 statusKind 状态')
+  assert.ok(!APP.includes('statusCollapsed'), 'App.vue 不得再有 statusCollapsed 状态')
+  assert.ok(!APP.includes('statusbar'), 'App.vue 不得再有 statusbar 相关标记')
+  assert.ok(!STYLES.includes('.statusbar'), 'styles.css 不得再有 .statusbar 规则')
+  assert.ok(
+    !existsSync(fileURLToPath(new URL('../src/components/StatusBar.vue', import.meta.url))),
+    'src/components/StatusBar.vue 必须已删除'
+  )
+  // 但 setStatus **必须保留**（唯一的诊断通道，只是改为只写控制台）
+  assert.ok(APP.includes('function setStatus('), 'setStatus 必须保留为诊断通道')
+  assert.ok(APP.includes('console.error(`[rdp] ${text}`)'), '失败文案必须走 console.error')
+  assert.ok(/console\.info\(`\[rdp\] \$\{text\}`\)/.test(APP), '普通文案必须走 console.info')
+  assert.ok(!APP.includes('statusText.value ='), 'setStatus 不得再写任何响应式 UI 状态')
+  assert.ok(!APP.includes('mstsc pid'), '界面源码里不得再出现 pid 文案')
+
+  // setStatus 的函数体只能写控制台：不碰响应式状态、不碰 DOM（"只写 console.*"的可机检口径）
+  const setStatusBody = APP.match(/function setStatus\([\s\S]*?\n\}/)?.[0] ?? ''
+  assert.ok(setStatusBody, 'setStatus 必须是一个普通函数声明')
+  assert.ok(!setStatusBody.includes('.value'), 'setStatus 里不得出现 .value（不得写 UI 状态）')
+  assert.ok(
+    !/document\.|innerHTML|textContent/.test(setStatusBody),
+    'setStatus 不得碰 DOM（用户要求界面不显示提示）'
+  )
+  // 8 处调用点必须都还在（删调用 = 丢掉唯一的诊断通道）
+  for (const call of [
+    '`已加载 ${rows.value.length} 个连接`',
+    '`读取连接列表失败：${err.message}`',
+    '`已更新连接 ${titleOf(record)}`',
+    '`已新建连接 ${titleOf(record)}`',
+    '`保存失败：${err.message}`',
+    '`已通过 shell 打开 ${titleOf(row)}${warningSuffix(data)}`',
+    '`打开 ${titleOf(row)} 失败：${err.message}`',
+    '`已删除 ${titleOf(row)}，并清理本机保存的凭据${warningSuffix(result)}`',
+    '`删除 ${titleOf(row)} 失败：${err.message}`'
+  ]) {
+    assert.ok(APP.includes(call), `setStatus 的调用点不得删除：${call}`)
+  }
+})
+
+test('卡片状态提示已全删（1.0.3 裁定）：状态点 / 展开错误原文 / 原「打开中」禁用态都不得复活', () => {
+  // 用户裁定：连卡片右上角的状态点一起删（成功/失败点、"点开看错误原文"展开区全部移除）
+  assert.ok(!APP.includes('cardStates'), 'App.vue 不得再有 cardStates')
+  assert.ok(!APP.includes('patchState'), 'App.vue 不得再有 patchState')
+  assert.ok(!APP.includes('showError'), 'App.vue 不得再有 showError')
+  assert.ok(!APP.includes('toggleCardError'), 'App.vue 不得再有 toggleCardError')
+  assert.ok(!CARD.includes('showError'), 'ConnectionCard.vue 不得再有 showError prop')
+  assert.ok(!CARD.includes('card__error'), 'ConnectionCard.vue 不得再有错误原文展开区')
+  assert.ok(!/class="dot|dot--/.test(CARD), 'ConnectionCard.vue 不得再有状态点（.dot / .dot--*）')
+  assert.ok(!STYLES.includes('.dot'), 'styles.css 不得再有 .dot 规则')
+  assert.ok(!STYLES.includes('card__error'), 'styles.css 不得再有 .card__error 规则')
+  assert.ok(
+    !/state === 'opening'/.test(CARD),
+    '卡片不得再有"打开中"禁用态（重复点击改由时间窗静默去重）'
+  )
+
+  // 替代品：静默去重（同一卡片 1 秒内的重复点击直接忽略，界面不出现任何变化）
+  assert.ok(APP.includes('createOpenDedup()'), '「打开」必须接静默去重')
+  assert.ok(APP.includes('openDedup.shouldIgnore(id)'), '去重判定必须在派发之前')
+  assert.ok(
+    APP.indexOf('openDedup.shouldIgnore(id)') < APP.indexOf("callExtension('open'"),
+    '去重判定必须早于 open 的派发'
+  )
+  assert.ok(APP.includes('openDedup.clear()'), '组件卸载时必须清掉去重窗口')
+  // 去重不能变成"看得见的反馈"：不加禁用态、不加文案
+  assert.ok(!APP.includes(':disabled='), 'App.vue 不得为去重加上禁用态')
 })
 
 test('P2：密码回填只在编辑路径发生，且注入点在 rowToForm 之后', () => {

@@ -6,7 +6,7 @@
  *   入口返回 `{ ok:true, data }` / `{ ok:false, error }`。
  * - save：校验 → insert/update → 按 remember 写/删 `api.secrets`
  * - remove：helper.deleteCredential（非致命）→ secrets.delete → db.del
- * - open：secrets.get → 生成 .rdp → helper.launch（fileName `<id>.rdp`）→ `{ pid }`
+ * - open：secrets.get → 生成 .rdp → helper.launch（fileName `<id>.rdp`）→ `{ pid: null, path, warnings }`
  * - uninstall(ctx)：逐个删除 `conn:<id>`
  */
 import assert from 'node:assert/strict'
@@ -70,7 +70,7 @@ function makeApi() {
   }
   const responses = {
     probe: { cwd: 'C:\\data', node: '24.0.0', electron: null, runAsNode: '1' },
-    launch: { pid: 4242, path: 'C:\\data\\rdp\\1.rdp', warnings: ['凭据可能未保存（TERMSRV/h）'] },
+    launch: { pid: null, path: 'C:\\data\\rdp\\1.rdp', warnings: ['凭据可能未保存（TERMSRV/h）'] },
     deleteCredential: { deleted: [], warnings: ['TERMSRV/h: 找不到凭据'] }
   }
   const api = {
@@ -294,14 +294,17 @@ test('remove：id 非法直接报错', async () => {
   assert.match(reply.error, /需要合法的 id/)
 })
 
-test('open：生成 .rdp + 预置凭据 + 拉起 mstsc，返回 pid', async () => {
+test('open：生成 .rdp + 预置凭据 + 派发 mstsc，返回 { pid:null, path }（不要求 pid）', async () => {
   const { api, calls } = makeApi()
   rdp(api)
   const created = await call(calls, 'save', formPayload({ port: 13389, fullscreen: 1 }))
   const reply = await call(calls, 'open', { id: created.data.id })
 
   assert.equal(reply.ok, true)
-  assert.equal(reply.data.pid, 4242)
+  // 经 cmd /c start 派发 ⇒ mstsc 不是我们的子进程，拿不到 pid；字段保留但恒为 null（ADR-0003）。
+  // "成功"的判据换成 path / warnings 真的回来了，不是把断言删掉。
+  assert.equal(reply.data.pid, null)
+  assert.equal(reply.data.path, 'C:\\data\\rdp\\1.rdp')
   const launch = calls.requested.find((item) => item.method === 'launch')
   assert.equal(launch.params.fileName, '1.rdp')
   assert.match(launch.params.rdpText, /^full address:s:10\.0\.0\.8:13389\r\n/)
@@ -316,6 +319,20 @@ test('open：生成 .rdp + 预置凭据 + 拉起 mstsc，返回 pid', async () =
     domain: 'CORP'
   })
   assert.deepEqual(reply.data.warnings, ['凭据可能未保存（TERMSRV/h）'])
+})
+
+test('open：helper 回空值 / 非对象 ⇒ ok:false（pid 判据删了，但"回包形状"判据必须留着）', async () => {
+  const { api, calls, responses } = makeApi()
+  rdp(api)
+  const created = await call(calls, 'save', formPayload())
+  // 真实故障：通道没连上 / 回包为空 ⇒ 调用方拿 `result?.x` 会静默变成 undefined。
+  // 这条分支是"删掉 pid 判据"之后仍然成立的输入校验（spec §7.2 的刻意保留）。
+  for (const bad of [null, undefined, 'oops', 42]) {
+    responses.launch = bad
+    const reply = await call(calls, 'open', { id: created.data.id })
+    assert.equal(reply.ok, false, `launch 回 ${String(bad)} 时必须失败`)
+    assert.match(reply.error, /未能拉起 mstsc\.exe/)
+  }
 })
 
 test('open：没有已保存的密码时 credential 为 null', async () => {

@@ -3,7 +3,7 @@
  *
  * 背景（阶段七审视发现的高危）：`execFile` 失败时 `err.message` 是
  * `Command failed: cmdkey … /pass:<明文>`，而 stderr 常为空——这些串经 index.js 的 warnings
- * 进界面状态栏、也进 console.error，等于把密码明文写进 UI 与日志。
+ * 进控制台（`console.info`/`console.error`，1.0.3 起界面不再显示任何提示），等于把密码明文写进日志。
  *
  * 这里用**制表符密码**逼出真实失败（实测 cmdkey 对含 tab 的 `/pass:` 一定 exit 1），
  * 断言返回文本里 `/pass:` 的值被打码、且原密码不出现。

@@ -108,7 +108,9 @@ test('installThemeBridge 启动即写兜底 token（假 root 记录 setProperty�
   installThemeBridge({ window: env.win, root: env.root })
   assert.deepEqual(env.root.style.values, FALLBACK_TOKENS)
   assert.equal(env.root.style.colorScheme, 'dark')
-  assert.equal(Object.keys(env.root.style.values).length, 25)
+  // 条数跟着兜底表走（1.0.3 移除状态栏后 25 → 23）；**不是**写死常量，也不是"少写几条也算过"
+  assert.equal(Object.keys(env.root.style.values).length, Object.keys(FALLBACK_TOKENS).length)
+  assert.ok(Object.keys(FALLBACK_TOKENS).length > 0, '兜底表不能变成空表')
 })
 
 test('N1：兜底 token 是"挂载前同步写满"的（输入类控件的关键 token 逐条有值）', () => {
@@ -125,7 +127,7 @@ test('N1：兜底 token 是"挂载前同步写满"的（输入类控件的关键
   assert.deepEqual(
     Object.keys(written).sort(),
     Object.keys(FALLBACK_TOKENS).sort(),
-    '兜底必须一次写满 25 条，不能只写一部分'
+    '兜底必须一次写满（与 FALLBACK_TOKENS 逐条一致，不能只写一部分）'
   )
 })
 

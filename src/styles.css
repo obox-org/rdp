@@ -279,9 +279,7 @@ body {
 
 .btn:focus-visible,
 .input:focus-visible,
-.select:focus-visible,
-.dot:focus-visible,
-.statusbar__toggle:focus-visible {
+.select:focus-visible {
   outline: none;
   box-shadow: 0 0 0 2px var(--accent);
 }
@@ -301,7 +299,6 @@ body {
 
 .card__title {
   margin: 0;
-  padding-right: 20px;
   /* 宿主 token 清单里没有等宽字体（§2.5 E2），改用宿主字体族 */
   font-family: var(--font-family);
   font-size: var(--font-size);
@@ -323,58 +320,6 @@ body {
   justify-content: flex-end;
   gap: 8px;
   margin-top: 4px;
-}
-
-.card__error {
-  margin: 0;
-  padding: 8px;
-  border: 1px solid var(--fg-error);
-  border-radius: var(--radius);
-  background: transparent;
-  background: color-mix(in srgb, var(--fg-error) 8%, transparent);
-  color: var(--fg-error);
-  font-size: var(--font-size-sm);
-  word-break: break-all;
-}
-
-.dot {
-  position: absolute;
-  top: 12px;
-  right: 12px;
-  width: 12px;
-  height: 12px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background: var(--border);
-  cursor: pointer;
-}
-
-.dot--opening {
-  background: var(--accent);
-  animation: dot-pulse 1s ease-in-out infinite;
-}
-
-.dot--ok {
-  background: var(--fg-success);
-  cursor: default;
-}
-
-.dot--error {
-  background: var(--fg-error);
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-    transform: scale(1);
-  }
-
-  50% {
-    opacity: 0.35;
-    transform: scale(0.75);
-  }
 }
 
 /* ---------- 空态 ---------- */
@@ -406,54 +351,6 @@ body {
   margin: 0 0 12px;
   color: var(--fg-dim);
   font-size: var(--font-size);
-}
-
-/* ---------- 状态栏 ---------- */
-
-.statusbar {
-  flex: 0 0 40px;
-  height: 40px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 0 20px;
-  border-top: 1px solid var(--border);
-  background: var(--statusbar-bg);
-  color: var(--statusbar-fg);
-  font-size: var(--font-size-sm);
-}
-
-.statusbar--collapsed {
-  flex-basis: 24px;
-  height: 24px;
-  padding: 0 12px;
-}
-
-.statusbar__toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 4px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  cursor: pointer;
-}
-
-.statusbar__text {
-  overflow: hidden;
-  white-space: nowrap;
-  text-overflow: ellipsis;
-}
-
-.statusbar--ok .statusbar__text {
-  color: var(--fg-success);
-}
-
-.statusbar--error .statusbar__text {
-  color: var(--fg-error);
 }
 
 /* ---------- 模态框 ---------- */
