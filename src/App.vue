@@ -1,8 +1,10 @@
 <script setup>
 /**
  * 远程桌面子应用主界面（设计 §3.9.1）。
- * 结构：sticky header（56px）→ 卡片网格 / 空态 → 底部状态栏（40px）；模态框与删除确认挂在这里。
+ * 结构：sticky header（56px）→ 搜索框（有连接时才出现；v1.0.1 引入、v1.0.2 美化）→ 卡片网格 / 空态 → 底部状态栏（40px）；
+ * 模态框与删除确认挂在这里。
  * 数据全部经 bridge.js 的 callExtension(method, payload) 走宿主消息桥，页面内没有 api 对象。
+ * 列表展示只用 `visibleRows`（= search.js 的 filterAndRank，见 docs/spec/rdp-search-box.md）。
  */
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
 import ConnectionCard from './components/ConnectionCard.vue'
@@ -316,16 +318,36 @@ refresh()
       <p v-if="loading" class="app__loading">正在加载连接…</p>
       <EmptyState v-else-if="rows.length === 0" @create="openCreate" />
       <template v-else>
-        <!-- 搜索框（v1.0.1）：只在确实有连接时出现；输入即过滤，Esc 清空 -->
+        <!-- 搜索框（v1.0.1 引入；v1.0.2 美化形态）：只在确实有连接时出现；输入即过滤，Esc 清空 -->
         <div class="search">
-          <input
-            v-model="searchQuery"
-            type="text"
-            class="input search__input"
-            placeholder="搜索名称 / 地址 / 用户名"
-            aria-label="搜索连接"
-            @keydown.esc="clearSearch"
-          />
+          <div class="search__field">
+            <!-- 放大镜：描边取 currentColor（色由 CSS 的 token 决定，不在这里写色值） -->
+            <svg class="search__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+              <circle
+                cx="6.5"
+                cy="6.5"
+                r="4.5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+              />
+              <path
+                d="M10 10l4.2 4.2"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.5"
+                stroke-linecap="round"
+              />
+            </svg>
+            <input
+              v-model="searchQuery"
+              type="text"
+              class="input search__input"
+              placeholder="搜索名称 / 地址 / 用户名"
+              aria-label="搜索连接"
+              @keydown.esc="clearSearch"
+            />
+          </div>
         </div>
         <EmptyState
           v-if="searching && visibleRows.length === 0"

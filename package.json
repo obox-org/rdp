@@ -1,6 +1,6 @@
 {
   "name": "obox-rdp-ext",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "private": true,
   "description": "远程桌面扩展（Obox 用户扩展，经 .oix 分发安装）：RDP 连接管理 + mstsc 拉起。与 obox 宿主只有扩展 API 依赖关系。",
   "license": "MIT",

@@ -24,7 +24,7 @@ scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 
 ## 2. 安装
 
-1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.1.oix`；
+1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.2.oix`；
 2. **拖拽**：把 `.oix` 直接拖进扩展管理器视图。
 
 安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp_chenzhi`，即 `<name>_<author>`，所以不要硬编码 `app://extensions/rdp/`）。
@@ -305,11 +305,14 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 - **行为变更 2（清空即删除）**：以前清空密码框**不会**删掉已存 secret（旧 secret 静默留着，下次打开照样用它连）；现在**清空并保存 = 删除** `conn:<id>`，界面上一行说明写在密码框的描述里。为避免"误删"，删除**只认界面显式声明的 `clearPassword`**（判定见 §4.1 与 `src/fields.js` 的 `passwordCleared`）：拿不准（读取失败 / 新建 / 从未存过）一律不删；
 - 变更自证：`test/passwordBackfill.test.js`（14 条）与 `test/componentSource.test.js` 的 P1/P2 源码门禁；变异自证留档在 `docs/evidence/password-mutation-*.txt`。
 
-### 12.7 卡片列表搜索（v1.0.1 新增）
+### 12.7 卡片列表搜索（v1.0.1 引入搜索，v1.0.2 美化搜索框）
 
 - **位置与交互**：卡片网格**上方**一个搜索输入框（占位文案「搜索名称 / 地址 / 用户名」），**输入即实时过滤**（`computed`，无防抖）；
   `Esc` 清空并**恢复全部**；**无匹配**时显示空态（复用既有空态组件，文案换成「没有匹配的连接」、不带主按钮）；
   搜索框只在"确实有连接"时出现（一条都没有时仍是原来的空态）；计数徽标与状态栏**仍是总数**；
+- **形态（v1.0.2 起）**：胶囊形 + 内嵌放大镜（图标色走 `--fg-dim`、聚焦转 `--accent`）+ **宽度上限 400px**（窄窗自动收窄）；
+  只用布局属性，仍是**零自造色值**、零字体族字面量（`test/stylesTokens.test.js` / `test/fallbackInputs.test.js` 继续绿）；
+  v1.0.1 周期引入的搜索框先是 `width: 100%` 的扁平通栏版（1000px 窗口下像一行空表单），v1.0.2 只改形态、**匹配语义一行未动**；
 - **搜哪些字段**（`src/search.js`，按 rdp 的**真实**库列）：`name` / `host` / `port` / `username` / `domain`，
   外加一项**派生**的卡片标题 `[username@]host:port`（与卡片显示共用 `fields.js` 的 `titleOf()`），
   目的是"照着卡片上看到的文字搜"也能命中（如 `chenzhi@10`）；`host` 为空的畸形条目不参与标题项；

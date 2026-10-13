@@ -1,0 +1,258 @@
+# 搜索功能门槛原始输出（v1.0.1 引入搜索 / v1.0.2 美化搜索框）
+#
+# 位置：extensions/rdp（独立仓库，自带 .git；本文件只记录原始输出，不参与构建与测试）
+# 运行目录：C:\Users\chenzhi\Documents\workspace\web\obox\extensions\rdp
+# 运行时间：2026-10（本机 Windows 11；pwsh 5.1；vite 7.3.7；无头 Chrome）
+#
+# 版本脉络：
+#   - v1.0.1：引入"搜索框 + 模糊搜索"（匹配语义 + 交互 + 空态），搜索框形态是 `width: 100%` 的扁平通栏版；
+#   - v1.0.2：用户反馈"输入框太丑"后**只改形态**（胶囊 + 内嵌放大镜 + 限宽 400px），
+#             **匹配语义一行未动**，也不重写 v1.0.1 的包。形态取舍见 docs/spec/rdp-search-box.md 的「形态修订」。
+#
+# 下面 [1]–[5] 是**当前工作区（v1.0.2）最终一次运行**的逐字输出；[5.3] 是 v1.0.1 期（扁平搜索框）的留存摘要。
+# 本文件写在所有源码/文档改动之后，是**惰性产物**（不进构建、不进测试、被 .prettierignore 跳过）。
+
+================================================================================
+[1] npm run build   → EXIT 0
+================================================================================
+
+> obox-rdp-ext@1.0.2 build
+> vite build --config vite.config.mjs
+
+vite v7.3.7 building client environment for production...
+transforming...
+✓ 19 modules transformed.
+rendering chunks...
+computing gzip size...
+../ui/index.html                   0.58 kB │ gzip:  0.45 kB
+../ui/assets/style-BTcydPly.css    9.24 kB │ gzip:  2.23 kB
+../ui/assets/index-C34yuqjL.js   108.03 kB │ gzip: 41.83 kB
+✓ built in 373ms
+
+（与 v1.0.1 的扁平版相比：JS 107.67 → 108.03 kB、CSS 8.87 → 9.24 kB；
+本次新增的是搜索匹配器 `src/search.js` 与 `.search*` 三条规则 + 一个内联放大镜 SVG。）
+
+================================================================================
+[2] node scripts/pack.mjs   → EXIT 0
+================================================================================
+
+已打包: C:\Users\chenzhi\Documents\workspace\web\obox\extensions\rdp\out\rdp-1.0.2.oix（176235 字节，9 个条目）
+条目: manifest.json, helper.cjs, index.js, lib/cmdkeyArgs.mjs, lib/connection.mjs, lib/rdpFile.mjs, ui/assets/index-C34yuqjL.js, ui/assets/style-BTcydPly.css, ui/index.html
+
+SHA256(out/rdp-1.0.2.oix) = A244E84FA8252BFE80AE13C8AD693358D024F51A16109E188F540603AE45F388
+
+⚠️ 产物是 **stored zip**，除内容外还写入每个文件的 **mtime（DOS 时间戳）**：只要重新 `npm run build` + `pack`，
+即使源码一字未改，哈希也会变（本次会话内同一个包就出现过 4B9363F0… 与 A244E84F… 两个值）。
+**判据是"9 个条目 + 176235 字节 + 无禁止项 + 包内 version=1.0.2"**，不是这个哈希。
+
+--------------------------------------------------------------------------------
+[2.1] 产物自检：回读中央目录 + 禁止项 + 包内版本（当前 out/rdp-1.0.2.oix）
+--------------------------------------------------------------------------------
+
+条目数=9
+  manifest.json
+  helper.cjs
+  index.js
+  lib/cmdkeyArgs.mjs
+  lib/connection.mjs
+  lib/rdpFile.mjs
+  ui/assets/index-C34yuqjL.js
+  ui/assets/style-BTcydPly.css
+  ui/index.html
+--- 禁止项检查 ---
+无 data/
+无 src/
+无 node_modules/
+--- 包内 manifest version ---
+  "version": "1.0.2",
+--- 包内 index.js 卡片注册 version ---
+  version: '1.0.2',
+
+（`data/` 是宿主升级时保留的运行时数据目录，含它会被安装器拒绝——打进去就等于发布一个装不上的包；
+打包脚本自己也有一道自检：条目落在排除目录里直接抛错。**版本号四处**已同步：
+`manifest.json` / `package.json` / `package-lock.json`（顶层 + `packages[""]`）/ `index.js` 的卡片注册
+——最后这一处由 `test/extension.test.js`「注册的卡片与 manifest 一致」钉住，漏改一处就是红灯。）
+
+================================================================================
+[3] node --test（全量）→ EXIT 0：tests 138 / pass 138 / fail 0 / skipped 0
+================================================================================
+
+（完整输出 154 行；此处**逐字保留末 22 行**，逐条用例名见仓库内 test/*.test.js）
+
+✔ FALLBACK_TOKENS 的键全部在宿主 token 白名单内（兜底表不得自造 token） (0.2718ms)
+✔ 宿主 main.css 的 :root 与白名单逐条一致（token 漂移即红） (0.6964ms)
+[rdp] 主题已应用 theme-dark（1 个 token）
+✔ installThemeBridge 启动即写兜底 token（假 root 记录 setProperty） (2.7727ms)
+✔ N1：兜底 token 是"挂载前同步写满"的（输入类控件的关键 token 逐条有值） (0.2718ms)
+✔ 收到 obox-theme 推送后 token 生效并覆盖兜底值 (0.4291ms)
+✔ 推送里的非法键名 / 空值 / 非字符串被丢弃且不抛错 (0.2695ms)
+✔ 收到推送后不再重发 obox-theme-request（请求最多 3 次） (0.5776ms)
+✔ 3 次请求均无响应 → 保留兜底并打印一次 warn (0.2036ms)
+✔ 来源不是 parent 的消息被忽略 (0.1663ms)
+✔ colorSchemeForThemeId：含 light 的 id → light，其余 → dark (0.1366ms)
+✔ 无 window 环境（node）下 installThemeBridge 安全空转不抛错 (0.2116ms)
+✔ dispose 之后不再响应推送 / 不再请求 (1.0049ms)
+✔ L4：clearTimers 的记账——只取消"还没触发"的定时器，已触发的不再重复取消 (0.3267ms)
+ℹ tests 138
+ℹ suites 3
+ℹ pass 138
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 30612.1123
+
+基线对照：加搜索前同一条命令是 tests 118 / pass 118 / fail 0 ⇒ 本次**只新增 20 条**，
+既有 118 条**一条断言都没改**（也没有为了变绿去改产品）。`skipped 0` 说明"需要宿主文件 /
+需要无头 Chrome"的那几道门禁本次**真的跑了**，不是被跳过。
+
+--------------------------------------------------------------------------------
+[3.1] node --test test/search.test.js → EXIT 0：tests 20 / pass 20 / fail 0
+--------------------------------------------------------------------------------
+
+✔ 子序列命中：查询字符按顺序出现即命中（chzi → chenzhi） (1.0085ms)
+✔ 不命中：顺序对不上的字符不算命中（izhc），完全无关的词也返回空 (0.1378ms)
+✔ 大小写不敏感：查询大写 = 小写（用户名 / 域 / 主机名三处都验） (0.2004ms)
+✔ 加权四档：前缀 > 词首（分隔符边界）> 连续片段 > 离散子序列 (0.1258ms)
+✔ filterAndRank 按分数降序：同一查询下前缀命中的行排在最前 (0.1144ms)
+✔ isWordStart：串首 / 分隔符后 / 驼峰边界算词首，普通位置不算 (0.1607ms)
+✔ 中文：连接名的任意连续片段都能命中 (0.5708ms)
+✔ 主机名：域名式主机名可按片段命中 (0.0954ms)
+✔ IP：按片段命中目标地址 (0.0704ms)
+✔ IP:端口：端口列与卡片标题都能命中（非默认端口也不例外） (0.1313ms)
+✔ 用户名与域各自可搜；派生标题让「照卡片上的文字搜」命中（chenzhi@10） (0.099ms)
+✔ 只搜条目里真实存在的文本：没有 host / port 的条目不会被 ":3389" 命中 (0.0427ms)
+✔ 多词 AND：全词都要命中同一个条目，命中不同条目不算 (0.0643ms)
+✔ 多词是"各词取最优字段分"再累加：词序不影响命中集合 (0.0494ms)
+✔ 空查询 / 纯空白 / null / undefined → 返回全部且保持原顺序 (0.0722ms)
+✔ 空查询返回的是副本（界面改动它不会污染原列表） (0.0445ms)
+✔ 首尾空白被丢掉：'  内网  ' 与 '内网' 等价 (0.0542ms)
+✔ isSearching：空 / 纯空白 = 没在搜；含词 = 在搜 (0.1051ms)
+✔ 同分保持原序（不靠 sort 的稳定性假设） (0.0749ms)
+✔ 边界输入：scoreEntry 空词表 / 非数组 / 畸形条目都不抛错 (0.1101ms)
+ℹ tests 20
+ℹ suites 0
+ℹ pass 20
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 60.3858
+
+--------------------------------------------------------------------------------
+[3.2] 版本号一致性的守卫（manifest 校验流程）：rdp 仓库**没有**独立 manifest 校验脚本，
+      实际入口就是 `test/extension.test.js`（注册卡片与 manifest 逐字段比对）
+--------------------------------------------------------------------------------
+
+✔ 注册的卡片与 manifest 一致 (0.9882ms)
+ℹ tests 18
+ℹ pass 18
+ℹ fail 0
+
+================================================================================
+[4] npx prettier --check .   → EXIT 0
+================================================================================
+
+Checking formatting...
+All matched files use Prettier code style!
+
+（`ui/`、`out/`、`node_modules/`、`data/` 由 `.gitignore` 覆盖 ⇒ prettier 默认跳过；
+`docs/evidence/` 由 `.prettierignore` 跳过 ⇒ 本文件不参与格式化检查。）
+
+================================================================================
+[5] 界面运行时核验（无头 Chrome，真实产物 index-C34yuqjL.js，假宿主回包）
+================================================================================
+
+做什么：把 `ui/` 的构建产物装进一个离线页面，注入假宿主（只回 `list`，喂 3 条连接；不回主题推送
+⇒ 走 `FALLBACK_TOKENS` 兜底），在无头 Chrome 里真的输入、真的派发
+`KeyboardEvent('keydown',{key:'Escape'})`，再回读 DOM。
+
+- 夹具：`%TEMP%\rdp-search-check\check.mjs`（**临时文件，不随扩展提交**；扩展没有 jsdom 依赖，
+  真机 `app://` 页需要宿主桥，所以只能在离线页里喂假回包）
+- 浏览器：`C:\Program Files\Google\Chrome\Application\chrome.exe`
+- 命令：`chrome --headless=new --disable-gpu --allow-file-access-from-files --virtual-time-budget=8000 --dump-dom <page>`
+
+--------------------------------------------------------------------------------
+[5.1] 三条连接时（DOM 回读，报告原文）
+--------------------------------------------------------------------------------
+
+{
+  "withRows": {
+    "initial": {
+      "cards": 3,
+      "hasSearchInput": true,
+      "placeholder": "搜索名称 / 地址 / 用户名",
+      "ariaLabel": "搜索连接",
+      "inputType": "text",
+      "emptyTitle": null,
+      "emptyHasAction": false
+    },
+    "matchChinese": { "cards": 1, "titles": ["li.ming@192.168.1.20:3389"] },
+    "matchSubsequence": { "cards": 1, "titles": ["chenzhi@10.0.0.8:3389"] },
+    "matchMultiWordAnd": { "cards": 1, "titles": ["chenzhi@10.0.0.8:3389"] },
+    "multiWordAcrossEntries": {
+      "cards": 0,
+      "titles": [],
+      "emptyTitle": "没有匹配的连接",
+      "emptyHasAction": false
+    },
+    "noMatch": {
+      "cards": 0,
+      "titles": [],
+      "emptyTitle": "没有匹配的连接",
+      "emptyHasAction": false
+    },
+    "afterEsc": {
+      "value": "",
+      "cards": 3,
+      "titles": [
+        "li.ming@192.168.1.20:3389",
+        "svc_test@test-win-01.corp.example.com:13389",
+        "chenzhi@10.0.0.8:3389"
+      ]
+    },
+    "trimmedWhitespace": { "cards": 1, "titles": ["li.ming@192.168.1.20:3389"] }
+  },
+  "empty": {
+    "initial": {
+      "cards": 0,
+      "hasSearchInput": false,
+      "placeholder": null,
+      "ariaLabel": null,
+      "inputType": null,
+      "emptyTitle": "还没有远程连接",
+      "emptyHasAction": true
+    }
+  }
+}
+
+读法：
+- `initial` = 3 张卡 + 搜索框在（占位文案 / aria-label / type=text 都对）；
+- `matchChinese` / `matchSubsequence` / `matchMultiWordAnd` = 输入即过滤，中文、子序列、多词 AND 都生效；
+- `multiWordAcrossEntries` / `noMatch` = 无匹配时**卡片清空 + 复用空态组件**（文案「没有匹配的连接」、**无主按钮**）；
+- `afterEsc` = 真派发 Esc 后输入框清空、3 张卡恢复，顺序仍是原来的"最新在前"（3 → 2 → 1）；
+- `trimmedWhitespace` = 首尾空白等价于无空白查询；
+- 第二段 `empty` = **零连接**时搜索框不出现，仍是原来的空态（「还没有远程连接」+ 主按钮）。
+
+--------------------------------------------------------------------------------
+[5.2] 视觉核验（截图，未随扩展提交）
+--------------------------------------------------------------------------------
+
+`%TEMP%\rdp-search-check\shot-initial2.png`（1000×700：胶囊 + 放大镜，限宽 400px，左边缘与卡片对齐）
+`%TEMP%\rdp-search-check\shot-focus.png`（聚焦态：`--accent` 描边环跟随胶囊圆角、图标转强调色、只剩 1 张命中卡）
+`%TEMP%\rdp-search-check\shot-narrow.png`（520×700：卡片单列时搜索框仍限宽 400px、不溢出）
+`%TEMP%\rdp-search-check\shot-empty-state.png`（无匹配空态：搜索框保留可继续改词，空态无主按钮）
+四张都是**仅兜底 token**（无宿主主题推送）下的暗色渲染：可读、无自造色值、无横向滚动。
+
+--------------------------------------------------------------------------------
+[5.3] v1.0.1 期留存摘要（**扁平通栏搜索框**那一版；仅作对照，不代表当前产物）
+--------------------------------------------------------------------------------
+
+build：`ui/assets/style-CoEvUXpL.css 8.87 kB` + `ui/assets/index-BgY2aK9c.js 107.67 kB`（✓ built in 384ms）
+pack ：`out/rdp-1.0.1.oix（175503 字节，9 个条目）`，条目同上但界面产物是 index-BgY2aK9c.js / style-CoEvUXpL.css
+自检 ：无 data/、无 src/、无 node_modules/，包内 `"version": "1.0.1"`
+test ：138 / pass 138 / fail 0（duration 30593ms）
+prettier：EXIT 0
+
+⚠️ 以上是**本会话**在"扁平搜索框 + version=1.0.1"状态下实测到的输出；`out/rdp-1.0.1.oix` 已被后续
+重新打包覆盖过（该目录被 `.gitignore` 忽略、不进提交），**已发布的 v1.0.1 资产以远端 release 为准**。
