@@ -72,9 +72,9 @@ if (entries.some((e) => e.entryName === EXT_DATA_DIR || e.entryName.startsWith(`
 
 ### 2.4 文档与 ADR（R-A4 / R-A5）
 
-- `skills/obox-ext-dev/references/api-reference.md`：`api.ipc` 一节补"JS 助手以纯 Node 运行（`ELECTRON_RUN_AS_NODE=1`），可用 `node:*` 内置模块，cwd = 扩展源目录/data"；`api.sqlite` 一节补"库文件在 `<扩展>/data/`，**覆盖安装时宿主保留 `data/`**"。troubleshooting 追加：助手拿不到 stdin（若再现）、包内带 `data/` 被拒。
-- `skills/obox-ext-dev/references/guides-user.md`：打包一节写明**必须排除 `data/`**（并说明原因），错误码清单加 `forbidden-entry`。
-- `skills/obox-ext-dev/scripts/create-user-extension.mjs`：生成的 `scripts/pack.mjs` 显式跳过 `data/`（防止脚手架用户踩坑）。
+- `docs/extension-api/api-reference.md`：`api.ipc` 一节补"JS 助手以纯 Node 运行（`ELECTRON_RUN_AS_NODE=1`），可用 `node:*` 内置模块，cwd = 扩展源目录/data"；`api.sqlite` 一节补"库文件在 `<扩展>/data/`，**覆盖安装时宿主保留 `data/`**"。troubleshooting 追加：助手拿不到 stdin（若再现）、包内带 `data/` 被拒。
+- `docs/extension-api/guides-user.md`：打包一节写明**必须排除 `data/`**（并说明原因），错误码清单加 `forbidden-entry`。
+- `skills/obox-ext-init/scripts/create-user-extension.mjs`：生成的 `scripts/pack.mjs` 显式跳过 `data/`（防止脚手架用户踩坑）。
 - `docs/adr/00xx-extension-data-durability-and-js-sidecar.md`：记录三条取舍（升级保留 data/、包内禁含 data/、JS 助手 Node 语义）与退场条件。
 
 ## 3. 扩展设计（`extensions/rdp/`）
@@ -309,13 +309,13 @@ Tab 顺序 = header → 卡片（打开/编辑/删除）；按钮有 `aria-label
 
 ## 5. 执行顺序与文件所有权（并行切分）
 
-| 步  | 执行者    | 独占文件                                                                                                                             |
-| --- | --------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| 1   | 我        | 宿主改动：`src/main/oixCore.ts`、`src/main/ipcCore.ts`、`src/main/ipc.ts`、`test/oix-install.test.ts`、新增 `test/ipc-spawn.test.ts` |
-| 2   | 子代理 H1 | 文档同步：`references/{api-reference,guides-user,troubleshooting}.md` + `scripts/create-user-extension.mjs`                          |
-| 3   | 子代理 E1 | 扩展骨架 + `lib/**` + `test/**` + `scripts/pack.mjs` + `package.json` + `manifest.json` + `helper.cjs`                               |
-| 4   | 子代理 E2 | `ui/**`（Vue 子应用：卡片列表/模态框/删除确认/空态）                                                                                 |
-| 5   | 我        | 集成、ADR、`README.md`、验收与审视                                                                                                   |
+| 步  | 执行者    | 独占文件                                                                                                                                 |
+| --- | --------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | 我        | 宿主改动：`src/main/oixCore.ts`、`src/main/ipcCore.ts`、`src/main/ipc.ts`、`test/oix-install.test.ts`、新增 `test/ipc-spawn.test.ts`     |
+| 2   | 子代理 H1 | 文档同步：`docs/extension-api/{api-reference,guides-user,troubleshooting}.md` + `skills/obox-ext-init/scripts/create-user-extension.mjs` |
+| 3   | 子代理 E1 | 扩展骨架 + `lib/**` + `test/**` + `scripts/pack.mjs` + `package.json` + `manifest.json` + `helper.cjs`                                   |
+| 4   | 子代理 E2 | `ui/**`（Vue 子应用：卡片列表/模态框/删除确认/空态）                                                                                     |
+| 5   | 我        | 集成、ADR、`README.md`、验收与审视                                                                                                       |
 
 顺序：1 与 2/3/4 可并行（文件不重叠）；3 必须先于 4（E2 依赖 E1 定下的消息协议与字段名）；集成与端到端由我做。
 

@@ -357,7 +357,7 @@ export default function rdp(api) {
   const card = api.app.register({
     id: APP_ID,
     name: '远程桌面',
-    version: '1.0.3',
+    version: '1.0.4',
     author: 'chenzhi',
     description: 'RDP 连接管理：卡片列表 / 新建 / 编辑 / 删除确认 / 打开（mstsc）',
     icon: CARD_ICON,
