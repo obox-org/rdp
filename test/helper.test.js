@@ -18,10 +18,13 @@ import readline from 'node:readline'
 const helperPath = join(dirname(fileURLToPath(import.meta.url)), '..', 'helper.cjs')
 const nodePath = process.execPath
 
-/** 跑一次 `node helper.cjs --selftest`，收集输出与退出码 */
-function runSelftest() {
+/** 跑一次 `node helper.cjs --selftest`，收集输出与退出码（可在陌生 cwd 下跑，见下一条用例） */
+function runSelftest(cwd) {
   return new Promise((resolve, reject) => {
-    const child = spawn(nodePath, [helperPath, '--selftest'], { stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(nodePath, [helperPath, '--selftest'], {
+      ...(cwd ? { cwd } : {}),
+      stdio: ['ignore', 'pipe', 'pipe']
+    })
     let stdout = ''
     let stderr = ''
     child.stdout.on('data', (chunk) => (stdout += chunk))
@@ -35,6 +38,17 @@ test('helper.cjs --selftest 通过且退出码为 0', async () => {
   const r = await runSelftest()
   assert.equal(r.code, 0, `退出码 ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`)
   assert.match(r.stdout, /selftest 通过/)
+})
+
+test('helper.cjs --selftest 在陌生 cwd 下同样通过（lib/*.mjs 走 __dirname，不依赖 cwd）', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'obox-rdp-selftest-cwd-'))
+  try {
+    const r = await runSelftest(cwd)
+    assert.equal(r.code, 0, `退出码 ${r.code}\nstdout: ${r.stdout}\nstderr: ${r.stderr}`)
+    assert.match(r.stdout, /selftest 通过/)
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
 })
 
 test('helper.cjs 的 ndjson JSON-RPC 往返（probe / 错误形状 / fileName 防护）', async () => {
@@ -94,6 +108,13 @@ test('helper.cjs 的 ndjson JSON-RPC 往返（probe / 错误形状 / fileName �
     child.stdin.write('{not json}\n')
     const broken = await waitFor((r) => r.id === null)
     assert.equal(broken.error.code, -32700)
+
+    // 4b) **多字节安全**：ndjson 按字节找换行（UTF-8 的多字节序列里不会出现 0x0a），
+    //     中文请求体原样进、中文错误文案原样出——不按"字符数"算长度，也就不会吞帧/截断。
+    send({ jsonrpc: '2.0', id: 5, method: '未知的方法名', params: { 参数: '中文值' } })
+    const chinese = await waitFor((r) => r.id === 5)
+    assert.equal(chinese.error.code, -32601)
+    assert.match(chinese.error.message, /未知方法: 未知的方法名/)
 
     // 5) fileName 不能带路径（不写文件、不碰 mstsc）
     send({

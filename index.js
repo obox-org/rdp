@@ -1,13 +1,20 @@
 /**
  * 远程桌面扩展入口（用户扩展，纯 ESM，经 .oix 安装到 userData/extensions/<name>_<author>/）。
  *
+ * **运行位置（obox 2.0.0 起）**：本入口在 **Extension Host Process**（Electron `utilityProcess`，
+ * 独立 Node 进程，**没有 DOM / `window` / `document` / `localStorage`**）里按 `file://` 动态
+ * `import()` 执行，`api` 仍由宿主作为唯一参数注入。因此这里**只用** `api.sqlite` / `api.secrets` /
+ * `api.ipc` / `api.app` 与 `node:*`，不碰任何 DOM 能力；界面全在子窗口静态页 `ui/index.html` 里。
+ *
  * 组成（设计 §3.2）：
- * - `api.app.register` 注册 App 卡片 → 子窗口加载 `ui/index.html`（Vite 构建产物）
+ * - `api.app.register` 注册 App 卡片 → 子窗口加载 `ui/index.html`（Vite 构建产物；页面 URL 必须
+ *   仍是 `app://extensions/<安装目录名>/…` 形状，由 `lib/appUrl.mjs` 从 `import.meta.url` 推导）
  * - `api.app.onMessage` 提供 6 个方法：list / save / remove / open / probe / password
  * - `api.sqlite.open('rdp.db')` 存连接（扁平列，字段名与界面 fields.js 一一对应）
  * - `api.secrets` 存密码（键 `conn:<id>`，密码**不入库**）
- * - `api.ipc` 通道 `rdp.helper`（manifest 静态声明，stdio + ndjson）拉起 helper.cjs：
- *   它负责写 `.rdp`、`cmdkey` 预置凭据、**经 `cmd /c start` 以孤儿进程派发 `mstsc.exe`**
+ * - `api.ipc` 通道 `rdp.helper`（manifest 静态声明，stdio + ndjson）：**子进程由宿主进程自己 spawn**
+ *   （不再经主进程），`program` 相对**扩展目录**解析、cwd = **扩展 data 目录**；helper.cjs 负责写
+ *   `.rdp`、`cmdkey` 预置凭据、**经 `cmd /c start` 以孤儿进程派发 `mstsc.exe`**
  *   （mstsc 因此不在 obox 进程树内，见 `docs/adr/0003`）
  *
  * 消息契约（与 `src/bridge.js` 对齐）：
@@ -21,9 +28,20 @@
  */
 import { buildRdpText } from './lib/rdpFile.mjs'
 import { fromDbRow, normalizeConnection, toDbRow, validateConnection } from './lib/connection.mjs'
+import { appPageUrl } from './lib/appUrl.mjs'
 
 /** App 卡片 id（宿主按它把子窗口消息路由到本扩展） */
 const APP_ID = 'rdp.main'
+/**
+ * 清单里的 `name` / `author`（**必须与 manifest.json 逐字一致**，`test/appUrl.test.js` 会比对）。
+ *
+ * 页面 URL 要用它们判"我是不是安装态目录（`<name>_<author>`）"——宿主里入口是 `file://` 加载的，
+ * 不能直接拿 `import.meta.url` 当页面 URL（`file://` 的 iframe 会被主窗口 CSP 拦掉）。
+ */
+const EXT_NAME = 'rdp'
+const EXT_AUTHOR = 'chenzhi'
+/** 子窗口页面（相对扩展目录；宿主按 `app://extensions/<安装目录名>/` 提供静态页） */
+const PAGE_PATH = 'ui/index.html'
 /** 连接库（`<扩展>/data/rdp.db`，默认表名 `rdp`） */
 const DB_NAME = 'rdp.db'
 /** manifest 里静态声明的 IPC 通道 id */
@@ -358,10 +376,12 @@ export default function rdp(api) {
     id: APP_ID,
     name: '远程桌面',
     version: '1.0.4',
-    author: 'chenzhi',
+    author: EXT_AUTHOR,
     description: 'RDP 连接管理：卡片列表 / 新建 / 编辑 / 删除确认 / 打开（mstsc）',
     icon: CARD_ICON,
-    url: new URL('./ui/index.html', new URL('.', import.meta.url)).href,
+    // 宿主模式入口是 file:// 加载的 ⇒ 页面 URL 必须显式拼成 app://extensions/<安装目录名>/…
+    // （直接 `new URL('./ui/index.html', import.meta.url)` 会得到 file://，被主窗口 CSP 拦掉，卡片空白）
+    url: appPageUrl(import.meta.url, { name: EXT_NAME, author: EXT_AUTHOR, page: PAGE_PATH }),
     multiOpen: false,
     width: 1024,
     height: 720

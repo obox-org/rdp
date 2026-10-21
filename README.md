@@ -7,26 +7,32 @@
 - 形态：**用户扩展**（`.oix` 分发），只贡献一个 App 卡片，界面只中文
 - 平台：**仅 Windows**（依赖 `mstsc.exe` / `cmdkey.exe`）
 - 与 obox 宿主只有扩展 API 依赖关系；运行期**零第三方依赖**（除注入的 `api` 外只用 `node:*`）
+- **运行位置（obox 2.0.0 起）**：入口在 **Extension Host Process**（Electron `utilityProcess`，独立 Node 进程，
+  **没有 DOM / `window` / `document` / `localStorage`**）里按 `file://` 动态 `import()` 执行；`api` 仍是
+  `plugin(api)` 注入。因此入口只用 `api.sqlite` / `api.secrets` / `api.ipc` / `api.app` 与 `node:*`，
+  界面全在子窗口静态页 `ui/index.html` 里。清单 `apiVersion` 仍是 **1**、`activationEvents` 用缺省 `*`
+  （理由见 §15）。
 
 ## 1. 目录结构
 
 ```
 manifest.json          清单：main + contributes.ipcChannels（rdp.helper / stdio / ndjson）
 index.js               入口（纯 ESM）：App 卡片 + 6 个方法（list/save/remove/open/probe/password）+ uninstall 钩子
-helper.cjs             Node 助手：storeCredential / deleteCredential / launch / probe / --selftest
+helper.cjs             Node 助手：storeCredential / deleteCredential / launch / probe / --selftest（**由宿主进程 spawn**）
+lib/appUrl.mjs         App 卡片页面 URL 推导（宿主里入口是 file:// ⇒ 显式拼 app://extensions|debug/…，见 §15）
 lib/rdpFile.mjs        .rdp 文本生成（字段表 §3.6、CRLF、转义防护）
 lib/cmdkeyArgs.mjs     cmdkey 参数拼装（TERMSRV 目标串策略）
 lib/mstscArgs.mjs      cmd 命令行构造（`/c start` 的参数数组 + 转义护栏 + mstsc 绝对路径解析）
 lib/connection.mjs     连接校验 / 归一 / 序列化（卡片标题、库行）
 src/**                 Vue 3 子应用源码（构建到 ui/，与源码分目录；src/theme.js = 主题接收桥 + 兜底 token；src/search.js = 卡片搜索匹配器；src/dedup.js = 「打开」的 1 秒静默去重；均为纯函数）
 ui/**                  Vite 构建产物（`ui/index.html` + `ui/assets/*`）
-test/*.test.js         node --test（lib 四个纯模块 + 入口消息契约 + helper 集成 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本 / 搜索匹配器 / 打开去重）
+test/*.test.js         node --test（lib 五个纯模块 + 入口消息契约 + helper 集成 + appUrl 页面 URL 门禁 + sidecar 专项门禁 + 主题桥 / token 门禁 / 兜底可读性 / 表单状态 / 组件源码门禁 / 说明文本 / 搜索匹配器 / 打开去重）
 scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 ```
 
 ## 2. 安装
 
-1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.3.oix`；
+1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.4.oix`；
 2. **拖拽**：把 `.oix` 直接拖进扩展管理器视图。
 
 安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp_chenzhi`，即 `<name>_<author>`，所以不要硬编码 `app://extensions/rdp/`）。
@@ -37,7 +43,7 @@ scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 
 ```bash
 npm install                 # 只为界面构建（vue/vite）；后端测试与打包不需要它
-npm test                    # node --test：lib 三模块 + 入口契约 + helper 集成
+npm test                    # node --test：lib 五模块 + 入口契约 + helper 集成 + 页面 URL / sidecar 专项门禁
 node helper.cjs --selftest   # 写样例 .rdp 到临时目录并回读断言（不调 cmdkey/mstsc）
 npm run build               # vite build → ui/
 npm run pack                # → out/rdp-<version>.oix（零依赖手写 stored zip）
@@ -51,8 +57,13 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 ```
 
 - 调试态子窗口 URL 是 `app://debug/rdp/ui/index.html`（调试目录优先），`program: './helper.cjs'` 解析到**调试目录**下的 helper；
-- 数据目录**仍然是** `userData/extensions/rdp/data`（不是调试目录）；
-- helper 的 cwd 是 `<扩展>/data`，`.rdp` 落在 `<扩展>/data/rdp/<id>.rdp`。
+- 数据目录跟着**扩展源目录**走：调试态是 `<调试目录>/data`（如 `…\extensions\rdp\data`），安装态是
+  `userData/extensions/rdp_chenzhi/data`（宿主 `extensionDataDirOf(extensionDir)` = `<扩展目录>/data`，
+  `src/extension-host/apiFactory.ts`）。早前"调试运行与安装运行共用同一个数据目录"的说法**已作废**（见 §9 勘误）；
+- helper 的 cwd 就是那个 data 目录（`<扩展目录>/data`，由**拉起它的一侧**给：2.0.0 起是宿主进程，
+  以前是主进程，两边同值），`.rdp` 落在 `<扩展目录>/data/rdp/<id>.rdp`；
+- `--debug-extension` 的 **id 要等于调试目录名**（`rdp@…\extensions\rdp`）：宿主模式下入口是 `file://` 加载的，
+  页面 URL 只能靠"目录名 vs 安装目录名 `<name>_<author>`"来区分 `app://debug/` 与 `app://extensions/`（理由见 §15）。
 
 ## 4. 消息契约（界面 ↔ 入口）
 
@@ -151,14 +162,16 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 | ------------ | ----------------------------------------------------------------------- |
 | 连接         | `userData/extensions/rdp_chenzhi/data/rdp.db`（表名默认 `rdp`，扁平列） |
 | 密码         | `api.secrets`，键 `conn:<id>`（safeStorage 加密，**不入库**）           |
-| `.rdp` 文件  | `<扩展>/data/rdp/<id>.rdp`（每次打开覆盖写，不自动清理，便于排查）      |
+| `.rdp` 文件  | `<扩展源目录>/data/rdp/<id>.rdp`（= helper 的 cwd；每次打开覆盖写，不自动清理，便于排查） |
 | Windows 凭据 | `cmdkey` 的 `TERMSRV/<目标>` 条目（删除连接时清理）                     |
 
 - **升级保留**：宿主在覆盖安装时把旧的 `data/` 移入新目录，因此升级后连接列表仍在；`.oix` 里**不含** `data/`（打包脚本显式排除，宿主安装器也会拒绝含 `data/` 的包）。
 - **表结构演进**：`api.sqlite` 的表列在**首次 insert** 时按值的 JS 类型创建；后续 insert 会自动 `ADD COLUMN` 补新列，但 `update` 不会。因此新增字段必须保证"先有一次带全字段的 insert"（本扩展每次 save 都提交全部列，正是为此）。
 - **卸载**：`uninstall(ctx)` 会打开 `rdp.db` 读出全部连接 id，逐个删除 `conn:<id>`。
   `api.secrets` **没有列表接口**，所以"以库里的 id 列表为准"是唯一可靠做法——若库已不可读（例如被手动删除），secrets 无法枚举、会留下残留条目（已记日志）。
-- 调试运行与安装运行**共用同一个数据目录**（调试扩展只是入口/静态资源换目录）。
+- **数据目录跟着扩展源目录**：安装态 `userData/extensions/rdp_chenzhi/data`，调试态 `<调试目录>/data`
+  （宿主 `apiFactory.ts` 的 `extensionDataDirOf(ext.path)`；`api.sqlite` / `api.fs` / `api.ipc` 的 cwd 共用这一个值）。
+  调试扩展只是入口/静态资源换目录，**数据不共享**——要验"覆盖安装后连接列表仍在"，必须用安装态跑（见 §9 勘误）。
 
 ## 7. 已知限制（未验证项）
 
@@ -436,3 +449,102 @@ Get-Process -Id <上面的 ParentProcessId> -ErrorAction SilentlyContinue   # �
 改成 `true` 的后果：`.rdp` 路径含空格时 `start` 只拿到半截 token，而 `cmd` **仍然 exit 0** ⇒ **静默走错**，
 且现有单测全绿（单测不启动真 `cmd`）。防线：代码里写死取值 + 注释、`lib/mstscArgs.mjs` 的纯函数矩阵、
 以及 §14.1 的真机验收。
+
+## 15. obox 2.0.0 宿主模式适配（D4 审计台账）
+
+obox `2.0.0-rc.1` 起用户扩展在 **Extension Host Process** 里执行（`utilityProcess`、完整 Node、
+**没有 DOM / `window` / `document` / `localStorage`**、入口按 `file://` 动态 `import()`），宿主
+`apiVersion = 3`、清单支持 `activationEvents`（4 类，缺省 `*`）。本节记录本扩展逐条查证的结果，
+**只改了一个真问题（§15.4 的页面 URL）**，其余"不改"都有理由。
+
+### 15.1 入口不碰 DOM（✅ 无需改动）
+
+`index.js` 与 `lib/*.mjs` 里没有 `window` / `document` / `localStorage`；能力全部走注入的 `api`
+（`api.sqlite` / `api.secrets` / `api.ipc` / `api.app`）。DOM 只存在于子窗口静态页（`src/**` → `ui/**`），
+那一侧本来就在浏览器上下文里。门禁：`test/extension.test.js` 的「宿主模式门禁」用例——
+去掉注释后静态扫描 `index.js` + `lib/*.mjs`，出现 `window.` / `document.` / `localStorage` /
+`sessionStorage` / `navigator.` 即红。
+
+### 15.2 `api.ipc` sidecar 由宿主 spawn（✅ 无需改动，专项证据见 §15.6）
+
+2.0.0 起 sidecar 的 `spawn` 发生在**宿主进程**（`src/extension-host/capabilities/ipc.ts` 的
+`startStdioSidecar`），不再经主进程；`program` 的解析基准、cwd、env、分帧都由宿主按清单与
+`api.ipc.connect` 的声明决定。本扩展对此**没有隐含假设**（不读进程 argv、不假设父进程是谁、
+不依赖 cwd 找自己的文件），所以不需要改——只把"宿主那侧到底怎么算"钉成用例（§15.6）。
+
+### 15.3 按字节分帧 / 多字节（✅ 不涉及，已补门禁）
+
+本扩展的通道声明是 **`framing: "ndjson"`**（每行一条 JSON），**不是** `Content-Length`，因此没有
+"按字符数算长度"这个坑：宿主的 `NdjsonParser` 在**字节**里找 `0x0a`（UTF-8 多字节序列中不会出现该字节），
+再用 `payload.toString('utf8')` 解码（`src/main/ipcCore.ts`）；helper 侧用 `node:readline`
+（`crlfDelay: Infinity`）读行、`process.stdout.write(JSON.stringify(msg) + '\n')` 写行——两侧都不自己算长度。
+门禁：`test/helper.test.js` 的"多字节安全"用例（中文方法名进、中文错误文案出）与
+`test/sidecarProgram.test.js`（断言 helper 里**没有** `Content-Length` 实现）。
+
+### 15.4 页面 URL 不能是 `file://`（❗ 真问题，已修）
+
+**现象**：入口原来是 `url: new URL('./ui/index.html', new URL('.', import.meta.url)).href`。
+宿主模式下 `import.meta.url` 是 `file:///…/extensions/rdp_chenzhi/index.js` ⇒ 页面 URL 变成
+`file:///…/ui/index.html`。主窗口 CSP 是 `default-src 'self' app:`（`src/renderer/index.html:10`），
+`frame-src` 回落到 `default-src` ⇒ **iframe 被拦，卡片窗口一片空白**（且没有报错弹窗，只有控制台一条 CSP 违规）。
+
+**改法**：新增 `lib/appUrl.mjs` 的 `appPageUrl(entryUrl, { name, author, page })`：
+入口是 `app://`（渲染进程模式）⇒ 同源相对解析；入口是 `file://`（宿主模式）⇒ 用**目录名**拼
+`app://extensions/<安装目录名>/…`，若目录名 ≠ 安装目录名 `<name>_<author>`（= 安装器的 `deriveDirName`）
+则判为调试目录、拼 `app://debug/<目录名>/…`。`index.js` 的两个常量 `EXT_NAME` / `EXT_AUTHOR` 必须与
+`manifest.json` 一致（`test/appUrl.test.js` 用真实清单比对，漂移即红）。
+
+**已知限制（如实登记）**：`--debug-extension` 的 **id 必须等于调试目录名**（宿主只把 `path` 交给扩展，
+没有协议告诉扩展"我是 `app://debug/<id>` 还是 `app://extensions/<安装目录名>`"）。用别的 id 调试时卡片会空白——
+改 id 或改目录名对齐即可。
+
+### 15.5 `apiVersion` 保持 1；`activationEvents` 保持缺省 `*`（✅ 都不改）
+
+- **`apiVersion: 1` 不动**：`apiVersion` 是"最低宿主要求"，升 3 的语义是"我在没有 DOM 的宿主里才正确"。
+  本扩展入口**本来就没用 DOM**，且 `api.ipc` / `api.sqlite` / `api.secrets` / `api.app` 在 v1 就有 ⇒
+  升 3 只会**白白拒绝** obox 1.x（`apiVersion ≤ 2`）上的运行，换不来任何行为差别。旧宿主上它仍在渲染进程跑，
+  页面 URL 由 `lib/appUrl.mjs` 的 `app:` 分支正确推导（两种模式都覆盖）。
+- **`activationEvents` 继续缺省（= `*`，立即激活）**：本扩展**没有** `contributes.views` / `commands`，
+  唯一的界面入口是 `api.app.register` 注册的 App 卡片，而卡片是在 `plugin(api)` 里注册的 ⇒ 改成
+  `onView:` / `onCommand:` 会**永不激活、卡片永不出现**（`docs/extension-api/guides-user.md` §2 明写这条）。
+  启动即激活的代价只有一次注册，sidecar **不随激活拉起**：`api.ipc.connect` 是懒的（`ensureHelper` 只在
+  `remove` / `open` / `probe` 里调用），所以"启动多起一个 helper 进程"不会发生。
+
+### 15.6 sidecar 专项（`contributes.ipcChannels` / program 解析 / cwd 变了会怎样）
+
+清单的实际声明（`manifest.json`）：
+
+```json
+{
+  "id": "rdp.helper",
+  "transport": "stdio",
+  "program": "./helper.cjs",
+  "framing": "ndjson"
+}
+```
+
+- **`program` 的解析方式**：宿主 `resolveProgramInExtension(extensionDir, program)` = `resolve(扩展目录, program)`
+  并校验**不越出扩展目录**（`src/main/ipcTransport.ts:41-48`），`extensionDir` 来自 `init.extensions[].path`
+  （安装态 `userData/extensions/rdp_chenzhi`，调试态是调试目录）。⇒ `./helper.cjs` 解析到
+  `<扩展目录>/helper.cjs`，**与 cwd 无关**；`.js/.cjs/.mjs` 由宿主自带 Node 以 `ELECTRON_RUN_AS_NODE=1` 运行
+  （`resolveStdioSpawn`）。本扩展是**相对路径、无盘符、无 `..`**，且解析结果真实存在
+  （`test/sidecarProgram.test.js` 按宿主同一套规则断言）。
+- **cwd 变了会不会坏**：不会。cwd 由**拉起方**给，两种模式**同值** = `<扩展源目录>/data`
+  （宿主 `src/extension-host/capabilities/ipc.ts` 的 `cwd: dataDir`；主进程以前是
+  `join(extensionDir, 'data')`）。helper 里所有模块加载都用 `__dirname` 的**绝对 URL**
+  （`pathToFileURL(join(__dirname, 'lib', …))`），不依赖 cwd；唯一用到 cwd 的地方是**故意**的——
+  `.rdp` 写到 `<cwd>/rdp/<id>.rdp`，即扩展 data 目录（升级保留、卸载随目录删除）。
+  门禁：`test/sidecarProgram.test.js` 在**陌生 cwd** 下跑 `--selftest`、并用真实子进程握手
+  断言 `probe.cwd` 就是宿主给的那个目录；`test/helper.test.js` 同样在临时 cwd 下跑一遍。
+- **额外收益（宿主模式的差异）**：宿主 `startStdioSidecar` 给子进程的环境是
+  `{ ...process.env, ELECTRON_RUN_AS_NODE: '1' }`（主进程模式是 7 项白名单 `minimalEnv`）。本扩展依赖的
+  `PATH` / `SystemRoot` 两份里都有，`cmdkey` 与 `mstsc.exe` 的解析不受影响。
+
+### 15.7 复跑门槛（本卡验收）
+
+```bash
+npm test                     # node --test（192 条，含 appUrl 页面 URL 门禁与 sidecar 专项）
+npm run build                # vite build → ui/
+npm run pack                 # → out/rdp-1.0.4.oix
+node <obox>/scripts/validate-manifest.mjs manifest.json   # 0 error / 0 warning
+```

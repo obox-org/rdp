@@ -10,7 +10,7 @@
  * - uninstall(ctx)：逐个删除 `conn:<id>`
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { test } from 'node:test'
 import { fileURLToPath } from 'node:url'
@@ -149,6 +149,13 @@ test('注册的卡片与 manifest 一致', () => {
   assert.equal(calls.card.height, 720)
   assert.match(calls.card.icon, /^<svg/)
   assert.ok(calls.card.url.endsWith('/ui/index.html'), calls.card.url)
+  // 宿主模式（obox 2.0.0 起）入口是 file:// 加载的：页面 URL 必须仍是 app:// 形状，
+  // 否则主窗口 CSP（default-src 'self' app:）会把子窗口 iframe 拦掉 ⇒ 卡片空白。
+  assert.match(
+    calls.card.url,
+    /^app:\/\/(extensions|debug)\/[^/]+\/ui\/index\.html$/,
+    calls.card.url
+  )
   assert.equal(manifest.contributes.ipcChannels[0].id, 'rdp.helper')
   assert.equal(manifest.contributes.ipcChannels[0].framing, 'ndjson')
   dispose()
@@ -402,4 +409,22 @@ test('uninstall：库不可用时只记日志、不抛错', async () => {
   await uninstall({ api: broken })
   await uninstall({})
   await uninstall(undefined)
+})
+
+test('宿主模式门禁：入口与 lib/ 不碰 DOM（宿主进程没有 window/document/localStorage）', () => {
+  // obox 2.0.0 起用户扩展在 Extension Host Process 里执行：入口里出现任何 DOM 全局即坏。
+  // 只扫入口一侧（index.js + lib/*.mjs）；DOM 属于子窗口静态页（src/ → ui/），不在此列。
+  const sources = [
+    join(root, 'index.js'),
+    ...readdirSync(join(root, 'lib')).map((name) => join(root, 'lib', name))
+  ]
+  for (const file of sources) {
+    const code = readFileSync(file, 'utf8')
+      // 去掉注释再判，避免注释里写 "window/document" 造成假红
+      .replace(/\/\*[\s\S]*?\*\//g, '')
+      .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    for (const banned of ['window.', 'document.', 'localStorage', 'sessionStorage', 'navigator.']) {
+      assert.ok(!code.includes(banned), `${file} 里出现了宿主进程没有的 DOM 能力：${banned}`)
+    }
+  }
 })
