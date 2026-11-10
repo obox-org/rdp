@@ -23,26 +23,28 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="overlay">
+  <div class="obox-modal__mask">
     <div
-      class="modal modal--sm"
+      class="obox-modal__panel obox-modal__panel--sm"
       role="dialog"
       aria-modal="true"
       aria-labelledby="rdp-delete-title"
       tabindex="-1"
     >
-      <header class="modal__header">
-        <h2 id="rdp-delete-title" class="modal__title">删除连接</h2>
+      <header class="obox-modal__header">
+        <h2 id="rdp-delete-title" class="obox-title obox-title--h3">删除连接</h2>
       </header>
-      <div class="modal__body">
-        <p class="modal__text">确定删除「{{ title }}」？</p>
-        <p class="modal__hint">同时清理本机为该主机保存的凭据，操作不可恢复</p>
+      <div class="obox-modal__body">
+        <p class="obox-text">确定删除「{{ title }}」？</p>
+        <p class="obox-text obox-text--sm obox-text--secondary obox-mt-4">
+          同时清理本机为该主机保存的凭据，操作不可恢复
+        </p>
       </div>
-      <footer class="modal__footer">
+      <footer class="obox-modal__footer">
         <button
           ref="cancelButton"
           type="button"
-          class="btn"
+          class="obox-btn"
           :disabled="submitting"
           @click="emit('close')"
         >
@@ -50,11 +52,11 @@ onMounted(() => {
         </button>
         <button
           type="button"
-          class="btn btn--danger"
+          class="obox-btn obox-btn--danger"
           :disabled="submitting"
           @click="emit('confirm')"
         >
-          <span v-if="submitting" class="spinner" aria-hidden="true"></span>
+          <span v-if="submitting" class="obox-spinner" aria-hidden="true"></span>
           {{ submitting ? '删除中…' : '删除' }}
         </button>
       </footer>

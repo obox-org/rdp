@@ -22,9 +22,9 @@ const emit = defineEmits(['create'])
 </script>
 
 <template>
-  <div class="empty">
+  <div class="obox-empty">
     <svg
-      class="empty__icon"
+      class="obox-empty__icon"
       viewBox="0 0 64 48"
       width="96"
       height="72"
@@ -57,10 +57,12 @@ const emit = defineEmits(['create'])
         stroke-linejoin="round"
       />
     </svg>
-    <p class="empty__title">{{ title }}</p>
-    <p class="empty__hint">{{ hint }}</p>
-    <button v-if="showAction" type="button" class="btn btn--primary" @click="emit('create')">
-      {{ actionLabel }}
-    </button>
+    <p class="obox-text obox-text--accent obox-empty__text">{{ title }}</p>
+    <p class="obox-text obox-text--sm obox-text--secondary">{{ hint }}</p>
+    <div v-if="showAction" class="obox-empty__actions">
+      <button type="button" class="obox-btn obox-btn--primary" @click="emit('create')">
+        {{ actionLabel }}
+      </button>
+    </div>
   </div>
 </template>
