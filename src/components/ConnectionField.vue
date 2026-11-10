@@ -57,12 +57,12 @@ function onSelect(event) {
 </script>
 
 <template>
-  <div class="field" :class="{ 'field--full': field.full }">
-    <!-- 勾选框：标签列留空占位（方框落到控件列 ⇒ 与其它控件的左边缘同一条竖线），方框与文字同一行 -->
+  <div class="obox-form-row" :class="{ 'obox-form-row--full': field.full }">
+    <!-- 勾选框：标签列留空占位（方框落到控件列 ⇒ 与其它控件的左边缘同一条竖线） -->
     <template v-if="field.type === 'check'">
-      <span class="field__label field__label--empty" aria-hidden="true"></span>
-      <div class="field__control">
-        <label class="check" :for="inputId">
+      <span class="obox-form-row__label" aria-hidden="true"></span>
+      <div class="obox-form-row__control">
+        <label class="obox-checkbox" :for="inputId">
           <input
             :id="inputId"
             type="checkbox"
@@ -75,18 +75,17 @@ function onSelect(event) {
     </template>
 
     <template v-else>
-      <label class="field__label" :for="inputId">
+      <label class="obox-form-row__label" :for="inputId">
         {{ field.label }}
-        <span v-if="required" class="field__required" aria-hidden="true">*</span>
+        <span v-if="required" class="obox-text--danger" aria-hidden="true">*</span>
       </label>
 
-      <div class="field__control">
+      <div class="obox-form-row__control">
         <!-- 文本 / 数字 -->
         <input
           v-if="field.type === 'text' || field.type === 'number'"
           :id="inputId"
-          class="input"
-          :class="{ 'input--error': !!error }"
+          class="obox-input"
           :type="field.type === 'number' ? 'number' : 'text'"
           :min="field.min"
           :max="field.max"
@@ -97,11 +96,10 @@ function onSelect(event) {
         />
 
         <!-- 密码 + 眼睛切换 -->
-        <div v-else-if="field.type === 'password'" class="input-row">
+        <div v-else-if="field.type === 'password'" class="obox-input-row">
           <input
             :id="inputId"
-            class="input"
-            :class="{ 'input--error': !!error }"
+            class="obox-input"
             :type="passwordVisible ? 'text' : 'password'"
             :placeholder="field.placeholder"
             :aria-invalid="!!error"
@@ -111,7 +109,7 @@ function onSelect(event) {
           />
           <button
             type="button"
-            class="btn"
+            class="obox-btn obox-btn--sm obox-btn--icon"
             :aria-label="passwordVisible ? '隐藏密码' : '显示密码'"
             :aria-pressed="passwordVisible"
             @click="passwordVisible = !passwordVisible"
@@ -141,8 +139,7 @@ function onSelect(event) {
         <select
           v-else-if="field.type === 'select'"
           :id="inputId"
-          class="select"
-          :class="{ 'select--error': !!error }"
+          class="obox-select"
           :aria-invalid="!!error"
           :value="form[field.key]"
           @change="onSelect"
@@ -159,10 +156,10 @@ function onSelect(event) {
         </select>
 
         <!-- 数值对（分辨率） -->
-        <div v-else-if="field.type === 'pair'" class="pair">
+        <div v-else-if="field.type === 'pair'" class="obox-field-pair">
           <input
             :id="inputId"
-            class="input"
+            class="obox-input"
             type="number"
             :min="field.min"
             :max="field.max"
@@ -170,9 +167,9 @@ function onSelect(event) {
             :value="form[field.keys[0]]"
             @input="change(field.keys[0], $event.target.value)"
           />
-          <span class="pair__sep" aria-hidden="true">×</span>
+          <span class="obox-field-pair__sep" aria-hidden="true">×</span>
           <input
-            class="input"
+            class="obox-input"
             type="number"
             :min="field.min"
             :max="field.max"
@@ -184,7 +181,7 @@ function onSelect(event) {
       </div>
     </template>
 
-    <p v-if="desc" class="field__desc">{{ desc }}</p>
-    <p v-if="error" class="field__error">{{ error }}</p>
+    <p v-if="desc" class="obox-form-row__desc">{{ desc }}</p>
+    <p v-if="error" class="obox-form-row__error">{{ error }}</p>
   </div>
 </template>

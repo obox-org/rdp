@@ -33,7 +33,8 @@ const FIELD = source('ConnectionField.vue')
 const DELETE = source('DeleteConfirm.vue')
 const CARD = source('ConnectionCard.vue')
 const APP = srcFile('App.vue')
-const STYLES = srcFile('styles.css')
+// 本扩展已不再带样式表（通用外观全部来自宿主组件库 app://obox/ui.css），
+// 原先针对 styles.css 的两条断言已随样式表一起移除（见 test/uiLibrary.test.js）。
 
 test('M1：ConnectionModal 的 form 必须由 props.row 经 watch 同步（不得回退成 reactive(rowToForm(...))）', () => {
   // 修复点 1：空壳 + watch 同步（props 是唯一真源）
@@ -133,7 +134,6 @@ test('状态栏已移除（1.0.3）：组件、模板用法、状态字段与 CS
   assert.ok(!APP.includes('statusKind'), 'App.vue 不得再有 statusKind 状态')
   assert.ok(!APP.includes('statusCollapsed'), 'App.vue 不得再有 statusCollapsed 状态')
   assert.ok(!APP.includes('statusbar'), 'App.vue 不得再有 statusbar 相关标记')
-  assert.ok(!STYLES.includes('.statusbar'), 'styles.css 不得再有 .statusbar 规则')
   assert.ok(
     !existsSync(fileURLToPath(new URL('../src/components/StatusBar.vue', import.meta.url))),
     'src/components/StatusBar.vue 必须已删除'
@@ -178,8 +178,6 @@ test('卡片状态提示已全删（1.0.3 裁定）：状态点 / 展开错误�
   assert.ok(!CARD.includes('showError'), 'ConnectionCard.vue 不得再有 showError prop')
   assert.ok(!CARD.includes('card__error'), 'ConnectionCard.vue 不得再有错误原文展开区')
   assert.ok(!/class="dot|dot--/.test(CARD), 'ConnectionCard.vue 不得再有状态点（.dot / .dot--*）')
-  assert.ok(!STYLES.includes('.dot'), 'styles.css 不得再有 .dot 规则')
-  assert.ok(!STYLES.includes('card__error'), 'styles.css 不得再有 .card__error 规则')
   assert.ok(
     !/state === 'opening'/.test(CARD),
     '卡片不得再有"打开中"禁用态（重复点击改由时间窗静默去重）'

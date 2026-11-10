@@ -17,18 +17,34 @@ const emit = defineEmits(['open', 'edit', 'delete'])
 </script>
 
 <template>
-  <article class="card">
-    <h3 class="card__title" :title="title">{{ title }}</h3>
-    <p class="card__subtitle">{{ subtitle }}</p>
-
-    <div class="card__actions">
-      <button type="button" class="btn" :aria-label="`打开 ${title}`" @click="emit('open')">
+  <article class="obox-card">
+    <div class="obox-card__body">
+      <h3 class="obox-title obox-title--h3 obox-truncate" :title="title">{{ title }}</h3>
+      <p class="obox-text obox-text--sm obox-text--secondary obox-truncate">{{ subtitle }}</p>
+    </div>
+    <div class="obox-card__footer">
+      <button
+        type="button"
+        class="obox-btn obox-btn--sm"
+        :aria-label="`打开 ${title}`"
+        @click="emit('open')"
+      >
         打开
       </button>
-      <button type="button" class="btn" :aria-label="`编辑 ${title}`" @click="emit('edit')">
+      <button
+        type="button"
+        class="obox-btn obox-btn--sm"
+        :aria-label="`编辑 ${title}`"
+        @click="emit('edit')"
+      >
         编辑
       </button>
-      <button type="button" class="btn" :aria-label="`删除 ${title}`" @click="emit('delete')">
+      <button
+        type="button"
+        class="obox-btn obox-btn--sm obox-btn--danger"
+        :aria-label="`删除 ${title}`"
+        @click="emit('delete')"
+      >
         删除
       </button>
     </div>

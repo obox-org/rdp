@@ -106,7 +106,7 @@ function submit() {
   submitted.value = true
   if (hasErrors.value) {
     nextTick(() => {
-      panel.value?.querySelector('.field__error')?.scrollIntoView({ block: 'nearest' })
+      panel.value?.querySelector('.obox-form-row__error')?.scrollIntoView({ block: 'nearest' })
     })
     return
   }
@@ -131,21 +131,21 @@ onMounted(() => {
 </script>
 
 <template>
-  <div class="overlay">
+  <div class="obox-modal__mask">
     <form
       ref="panel"
-      class="modal"
+      class="obox-modal__panel"
       role="dialog"
       aria-modal="true"
       aria-labelledby="rdp-modal-title"
       @submit.prevent="submit"
       @keydown.enter="onEnter"
     >
-      <header class="modal__header">
-        <h2 id="rdp-modal-title" class="modal__title">{{ title }}</h2>
+      <header class="obox-modal__header">
+        <h2 id="rdp-modal-title" class="obox-title obox-title--h3">{{ title }}</h2>
         <button
           type="button"
-          class="modal__close"
+          class="obox-btn obox-btn--ghost obox-btn--icon"
           aria-label="关闭"
           :disabled="submitting"
           @click="emit('close')"
@@ -154,28 +154,26 @@ onMounted(() => {
         </button>
       </header>
 
-      <div class="modal__body">
-        <p v-if="error" class="alert alert--error">保存失败：{{ error }}</p>
+      <div class="obox-modal__body">
+        <p v-if="error" class="obox-alert obox-alert--danger obox-mb-4">保存失败：{{ error }}</p>
 
-        <section v-for="group in COMMON_GROUPS" :key="group.title" class="form-group">
-          <h3 class="form-group__title">{{ group.title }}</h3>
-          <div class="form-rows">
-            <ConnectionField
-              v-for="field in visibleFields(group)"
-              :key="field.key"
-              :field="field"
-              :form="form"
-              :error="errors[field.key] || ''"
-              :required="!!field.required"
-              @change="onChange"
-            />
-          </div>
+        <section v-for="group in COMMON_GROUPS" :key="group.title" class="obox-form-section">
+          <h3 class="obox-form-section__title">{{ group.title }}</h3>
+          <ConnectionField
+            v-for="field in visibleFields(group)"
+            :key="field.key"
+            :field="field"
+            :form="form"
+            :error="errors[field.key] || ''"
+            :required="!!field.required"
+            @change="onChange"
+          />
         </section>
 
-        <div class="accordion">
+        <div class="obox-disclosure">
           <button
             type="button"
-            class="accordion__toggle"
+            class="obox-disclosure__toggle"
             :aria-expanded="advancedOpen"
             aria-controls="rdp-advanced-body"
             @click="advancedOpen = !advancedOpen"
@@ -183,31 +181,33 @@ onMounted(() => {
             <span aria-hidden="true">{{ advancedOpen ? '▾' : '▸' }}</span>
             高级选项
           </button>
-          <div v-show="advancedOpen" id="rdp-advanced-body" class="accordion__body">
-            <section v-for="group in ADVANCED_GROUPS" :key="group.title" class="form-group">
-              <h3 class="form-group__title">{{ group.title }}</h3>
-              <div class="form-rows">
-                <ConnectionField
-                  v-for="field in visibleFields(group)"
-                  :key="field.key"
-                  :field="field"
-                  :form="form"
-                  :error="errors[field.key] || ''"
-                  :required="!!field.required"
-                  @change="onChange"
-                />
-              </div>
+          <div v-show="advancedOpen" id="rdp-advanced-body" class="obox-disclosure__body">
+            <section v-for="group in ADVANCED_GROUPS" :key="group.title" class="obox-form-section">
+              <h3 class="obox-form-section__title">{{ group.title }}</h3>
+              <ConnectionField
+                v-for="field in visibleFields(group)"
+                :key="field.key"
+                :field="field"
+                :form="form"
+                :error="errors[field.key] || ''"
+                :required="!!field.required"
+                @change="onChange"
+              />
             </section>
           </div>
         </div>
       </div>
 
-      <footer class="modal__footer">
-        <button type="button" class="btn" :disabled="submitting" @click="emit('close')">
+      <footer class="obox-modal__footer">
+        <button type="button" class="obox-btn" :disabled="submitting" @click="emit('close')">
           取消
         </button>
-        <button type="submit" class="btn btn--primary" :disabled="submitting || hasErrors">
-          <span v-if="submitting" class="spinner" aria-hidden="true"></span>
+        <button
+          type="submit"
+          class="obox-btn obox-btn--primary"
+          :disabled="submitting || hasErrors"
+        >
+          <span v-if="submitting" class="obox-spinner" aria-hidden="true"></span>
           {{ submitting ? '保存中…' : '保存' }}
         </button>
       </footer>

@@ -278,16 +278,16 @@ refresh()
 </script>
 
 <template>
-  <div class="app">
-    <header class="app__header">
-      <div class="app__title">
-        <h1 class="app__heading">远程桌面</h1>
-        <span class="badge">{{ connectionsText }}</span>
+  <div class="obox-page">
+    <header class="obox-page__header">
+      <div class="obox-row obox-row--center obox-row--gap-sm">
+        <h1 class="obox-title obox-title--h2">远程桌面</h1>
+        <span class="obox-tag">{{ connectionsText }}</span>
       </div>
       <button
         ref="createButton"
         type="button"
-        class="btn btn--primary"
+        class="obox-btn obox-btn--primary"
         aria-label="新建连接"
         @click="openCreate"
       >
@@ -295,23 +295,16 @@ refresh()
       </button>
     </header>
 
-    <main class="app__content">
-      <p v-if="loading" class="app__loading">正在加载连接…</p>
+    <main class="obox-page__body">
+      <p v-if="loading" class="obox-text obox-text--sm obox-text--secondary">正在加载连接…</p>
       <EmptyState v-else-if="rows.length === 0" @create="openCreate" />
       <template v-else>
-        <!-- 搜索框（v1.0.1 引入；v1.0.2 美化形态）：只在确实有连接时出现；输入即过滤，Esc 清空 -->
-        <div class="search">
-          <div class="search__field">
-            <!-- 放大镜：描边取 currentColor（色由 CSS 的 token 决定，不在这里写色值） -->
-            <svg class="search__icon" viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-              <circle
-                cx="6.5"
-                cy="6.5"
-                r="4.5"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="1.5"
-              />
+        <!-- 搜索框（v1.0.1 引入）：只在确实有连接时出现；输入即过滤，Esc 清空 -->
+        <div class="obox-input-group obox-mb-4">
+          <!-- 放大镜：描边取 currentColor（色由组件库/主题 token 决定，不在这里写色值） -->
+          <span class="obox-input-group__prefix" aria-hidden="true">
+            <svg viewBox="0 0 16 16" width="14" height="14">
+              <circle cx="6.5" cy="6.5" r="4.5" fill="none" stroke="currentColor" stroke-width="1.5" />
               <path
                 d="M10 10l4.2 4.2"
                 fill="none"
@@ -320,15 +313,15 @@ refresh()
                 stroke-linecap="round"
               />
             </svg>
-            <input
-              v-model="searchQuery"
-              type="text"
-              class="input search__input"
-              placeholder="搜索名称 / 地址 / 用户名"
-              aria-label="搜索连接"
-              @keydown.esc="clearSearch"
-            />
-          </div>
+          </span>
+          <input
+            v-model="searchQuery"
+            type="text"
+            class="obox-input"
+            placeholder="搜索名称 / 地址 / 用户名"
+            aria-label="搜索连接"
+            @keydown.esc="clearSearch"
+          />
         </div>
         <EmptyState
           v-if="searching && visibleRows.length === 0"
@@ -336,7 +329,7 @@ refresh()
           hint="换个关键词试试；按 Esc 清空搜索框即可恢复全部连接"
           :show-action="false"
         />
-        <div v-else class="app__grid">
+        <div v-else class="obox-card-grid">
           <ConnectionCard
             v-for="row in visibleRows"
             :key="row.id"
