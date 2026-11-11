@@ -35,7 +35,7 @@ scripts/pack.mjs       零依赖打包 → out/rdp-<version>.oix
 1. **扩展管理器**：obox → 扩展管理器 → 「安装扩展」→ 选 `out/rdp-1.0.4.oix`；
 2. **拖拽**：把 `.oix` 直接拖进扩展管理器视图。
 
-安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp_chenzhi`，即 `<name>_<author>`，所以不要硬编码 `app://extensions/rdp/`）。
+安装成功后「应用」里出现**远程桌面**卡片（安装目录名是 `rdp.chenzhi`，即 `<name>.<author>`，所以不要硬编码 `app://extensions/rdp/`）。
 升级 = **直接覆盖安装同名包**（热生效，无需重启）；`data/` 由宿主在覆盖安装时保留（见 §6）。
 卸载请用「卸载」而不是「先卸载再装」——已激活扩展的卸载会要求重启。
 
@@ -58,12 +58,13 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 
 - 调试态子窗口 URL 是 `app://debug/rdp/ui/index.html`（调试目录优先），`program: './helper.cjs'` 解析到**调试目录**下的 helper；
 - 数据目录跟着**扩展源目录**走：调试态是 `<调试目录>/data`（如 `…\extensions\rdp\data`），安装态是
-  `userData/extensions/rdp_chenzhi/data`（宿主 `extensionDataDirOf(extensionDir)` = `<扩展目录>/data`，
+  `userData/extensions/rdp.chenzhi/data`（宿主 `extensionDataDirOf(extensionDir)` = `<扩展目录>/data`，
   `src/extension-host/apiFactory.ts`）。早前"调试运行与安装运行共用同一个数据目录"的说法**已作废**（见 §9 勘误）；
 - helper 的 cwd 就是那个 data 目录（`<扩展目录>/data`，由**拉起它的一侧**给：2.0.0 起是宿主进程，
   以前是主进程，两边同值），`.rdp` 落在 `<扩展目录>/data/rdp/<id>.rdp`；
 - `--debug-extension` 的 **id 要等于调试目录名**（`rdp@…\extensions\rdp`）：宿主模式下入口是 `file://` 加载的，
-  页面 URL 只能靠"目录名 vs 安装目录名 `<name>_<author>`"来区分 `app://debug/` 与 `app://extensions/`（理由见 §15）。
+  页面 URL 由入口路径的**父目录名**判定（父目录叫 `extensions` ⇒ 安装态，否则调试态），
+  见 §15 与 `lib/appUrl.mjs`（1.1.0 用复刻命名规则来判定，装到用户机器上直接 404 `not found`）。
 
 ## 4. 消息契约（界面 ↔ 入口）
 
@@ -160,7 +161,7 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 
 | 数据         | 位置                                                                    |
 | ------------ | ----------------------------------------------------------------------- |
-| 连接         | `userData/extensions/rdp_chenzhi/data/rdp.db`（表名默认 `rdp`，扁平列） |
+| 连接         | `userData/extensions/rdp.chenzhi/data/rdp.db`（表名默认 `rdp`，扁平列） |
 | 密码         | `api.secrets`，键 `conn:<id>`（safeStorage 加密，**不入库**）           |
 | `.rdp` 文件  | `<扩展源目录>/data/rdp/<id>.rdp`（= helper 的 cwd；每次打开覆盖写，不自动清理，便于排查） |
 | Windows 凭据 | `cmdkey` 的 `TERMSRV/<目标>` 条目（删除连接时清理）                     |
@@ -169,7 +170,7 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 - **表结构演进**：`api.sqlite` 的表列在**首次 insert** 时按值的 JS 类型创建；后续 insert 会自动 `ADD COLUMN` 补新列，但 `update` 不会。因此新增字段必须保证"先有一次带全字段的 insert"（本扩展每次 save 都提交全部列，正是为此）。
 - **卸载**：`uninstall(ctx)` 会打开 `rdp.db` 读出全部连接 id，逐个删除 `conn:<id>`。
   `api.secrets` **没有列表接口**，所以"以库里的 id 列表为准"是唯一可靠做法——若库已不可读（例如被手动删除），secrets 无法枚举、会留下残留条目（已记日志）。
-- **数据目录跟着扩展源目录**：安装态 `userData/extensions/rdp_chenzhi/data`，调试态 `<调试目录>/data`
+- **数据目录跟着扩展源目录**：安装态 `userData/extensions/rdp.chenzhi/data`，调试态 `<调试目录>/data`
   （宿主 `apiFactory.ts` 的 `extensionDataDirOf(ext.path)`；`api.sqlite` / `api.fs` / `api.ipc` 的 cwd 共用这一个值）。
   调试扩展只是入口/静态资源换目录，**数据不共享**——要验"覆盖安装后连接列表仍在"，必须用安装态跑（见 §9 勘误）。
 
@@ -235,7 +236,7 @@ npm run dev -- -- --debug-extension rdp@C:\绝对\路径\extensions\rdp
 
 ### 勘误（阶段七审视后修正的断言）
 
-- **数据目录不是同一个**：调试态 `extId=rdp`、helper 的 cwd 是**调试目录**/data；安装态 `extId=rdp_chenzhi`（`<name>_<author>`），库在 `userData/extensions/rdp_chenzhi/data/`。本文档早前把两者混为一谈的表述以本段为准。**验收「覆盖安装后连接列表仍在」必须用安装态跑**（调试态不经过 `.oix` 安装流程）。
+- **数据目录不是同一个**：调试态 `extId=rdp`、helper 的 cwd 是**调试目录**/data；安装态 `extId=rdp.chenzhi`（`<name>.<author>`），库在 `userData/extensions/rdp.chenzhi/data/`。本文档早前把两者混为一谈的表述以本段为准。**验收「覆盖安装后连接列表仍在」必须用安装态跑**（调试态不经过 `.oix` 安装流程）。
 - **`warnings` 只进控制台（1.0.3 起）**：状态栏已整体移除，`open`/`remove` 的 `warnings` 与操作结果一律
   `console.info`/`console.error`（前缀 `[rdp]`），**界面上不可见**——要看就开 DevTools 或看 obox 终端
   （见 §14「已知行为」）。
@@ -484,19 +485,25 @@ obox `2.0.0-rc.1` 起用户扩展在 **Extension Host Process** 里执行（`uti
 ### 15.4 页面 URL 不能是 `file://`（❗ 真问题，已修）
 
 **现象**：入口原来是 `url: new URL('./ui/index.html', new URL('.', import.meta.url)).href`。
-宿主模式下 `import.meta.url` 是 `file:///…/extensions/rdp_chenzhi/index.js` ⇒ 页面 URL 变成
+宿主模式下 `import.meta.url` 是 `file:///…/extensions/rdp.chenzhi/index.js` ⇒ 页面 URL 变成
 `file:///…/ui/index.html`。主窗口 CSP 是 `default-src 'self' app:`（`src/renderer/index.html:10`），
 `frame-src` 回落到 `default-src` ⇒ **iframe 被拦，卡片窗口一片空白**（且没有报错弹窗，只有控制台一条 CSP 违规）。
 
-**改法**：新增 `lib/appUrl.mjs` 的 `appPageUrl(entryUrl, { name, author, page })`：
-入口是 `app://`（渲染进程模式）⇒ 同源相对解析；入口是 `file://`（宿主模式）⇒ 用**目录名**拼
-`app://extensions/<安装目录名>/…`，若目录名 ≠ 安装目录名 `<name>_<author>`（= 安装器的 `deriveDirName`）
-则判为调试目录、拼 `app://debug/<目录名>/…`。`index.js` 的两个常量 `EXT_NAME` / `EXT_AUTHOR` 必须与
-`manifest.json` 一致（`test/appUrl.test.js` 用真实清单比对，漂移即红）。
+**改法**：新增 `lib/appUrl.mjs` 的 `appPageUrl(entryUrl, { page })`：
+入口是 `app://`（渲染进程模式）⇒ 同源相对解析；入口是 `file://`（宿主模式）⇒ 按**入口的父目录名**判定：
+父目录叫 `extensions` ⇒ `app://extensions/<目录名>/…`（宿主的系统根与用户根都叫这个名字），
+否则 ⇒ `app://debug/<目录名>/…`（`--debug-extension` 的既有约定）。
 
-**已知限制（如实登记）**：`--debug-extension` 的 **id 必须等于调试目录名**（宿主只把 `path` 交给扩展，
-没有协议告诉扩展"我是 `app://debug/<id>` 还是 `app://extensions/<安装目录名>`"）。用别的 id 调试时卡片会空白——
-改 id 或改目录名对齐即可。
+**1.1.0 的线上事故（1.1.1 修）**：最初这里复刻了宿主的"安装目录命名规则"来区分安装态与调试态，
+但复刻值把分隔符写成了 `<name>_<author>`，而宿主（`src/main/oixCore.ts` 的 `deriveDirName`）是
+`<name>.<author>`（真实目录 `rdp.chenzhi`）⇒ **安装态被判成调试态**，页面地址成
+`app://debug/rdp.chenzhi/ui/index.html`，协议侧直接 **404 `not found`**（应用里打开卡片只看到 "not found"）。
+当时的单测还断言了那个错值，所以本地全绿、装到用户机器上必坏。
+⇒ 现在**不复刻任何命名规则**，只看入口路径的结构；单测直接用真实目录 `.` 形态做回归。
+
+**已知限制（如实登记）**：`--debug-extension` 的目录**恰好**放在名为 `extensions` 的目录下时
+（如仓库里的 `…\obox\extensions\rdp`）会被认成安装态；开发期请用渲染进程回退模式
+（`OBOX_EXTENSION_HOST=0`），那时入口本身就是 `app://debug|extensions/…`，走相对解析。
 
 ### 15.5 `apiVersion` 保持 1；`activationEvents` 保持缺省 `*`（✅ 都不改）
 
@@ -525,7 +532,7 @@ obox `2.0.0-rc.1` 起用户扩展在 **Extension Host Process** 里执行（`uti
 
 - **`program` 的解析方式**：宿主 `resolveProgramInExtension(extensionDir, program)` = `resolve(扩展目录, program)`
   并校验**不越出扩展目录**（`src/main/ipcTransport.ts:41-48`），`extensionDir` 来自 `init.extensions[].path`
-  （安装态 `userData/extensions/rdp_chenzhi`，调试态是调试目录）。⇒ `./helper.cjs` 解析到
+  （安装态 `userData/extensions/rdp.chenzhi`，调试态是调试目录）。⇒ `./helper.cjs` 解析到
   `<扩展目录>/helper.cjs`，**与 cwd 无关**；`.js/.cjs/.mjs` 由宿主自带 Node 以 `ELECTRON_RUN_AS_NODE=1` 运行
   （`resolveStdioSpawn`）。本扩展是**相对路径、无盘符、无 `..`**，且解析结果真实存在
   （`test/sidecarProgram.test.js` 按宿主同一套规则断言）。

@@ -33,12 +33,13 @@ import { appPageUrl } from './lib/appUrl.mjs'
 /** App 卡片 id（宿主按它把子窗口消息路由到本扩展） */
 const APP_ID = 'rdp.main'
 /**
- * 清单里的 `name` / `author`（**必须与 manifest.json 逐字一致**，`test/appUrl.test.js` 会比对）。
+ * 卡片上显示的清单作者（**必须与 manifest.json 逐字一致**，`test/appUrl.test.js` 会比对）。
  *
- * 页面 URL 要用它们判"我是不是安装态目录（`<name>_<author>`）"——宿主里入口是 `file://` 加载的，
- * 不能直接拿 `import.meta.url` 当页面 URL（`file://` 的 iframe 会被主窗口 CSP 拦掉）。
+ * 注意：**不要再拿它去复刻安装目录名**。1.1.0 用 `<name>_<author>` 判"是不是安装态"，
+ * 而宿主（`src/main/oixCore.ts` 的 `deriveDirName`）用的是 `<name>.<author>` ⇒ 真实目录
+ * `rdp.chenzhi` 被判成调试态，页面地址成 `app://debug/rdp.chenzhi/…`，打开卡片只看到
+ * "not found"。现在目录名由入口路径直接推出（见 `lib/appUrl.mjs`）。
  */
-const EXT_NAME = 'rdp'
 const EXT_AUTHOR = 'chenzhi'
 /** 子窗口页面（相对扩展目录；宿主按 `app://extensions/<安装目录名>/` 提供静态页） */
 const PAGE_PATH = 'ui/index.html'
@@ -375,13 +376,15 @@ export default function rdp(api) {
   const card = api.app.register({
     id: APP_ID,
     name: '远程桌面',
-    version: '1.1.0',
+    version: '1.1.1',
     author: EXT_AUTHOR,
     description: 'RDP 连接管理：卡片列表 / 新建 / 编辑 / 删除确认 / 打开（mstsc）',
     icon: CARD_ICON,
     // 宿主模式入口是 file:// 加载的 ⇒ 页面 URL 必须显式拼成 app://extensions/<安装目录名>/…
-    // （直接 `new URL('./ui/index.html', import.meta.url)` 会得到 file://，被主窗口 CSP 拦掉，卡片空白）
-    url: appPageUrl(import.meta.url, { name: EXT_NAME, author: EXT_AUTHOR, page: PAGE_PATH }),
+    // 目录名由入口路径的父目录判定（`extensions` ⇒ 安装态），**不再复刻宿主的命名规则**：
+    // 1.1.0 复刻成 `<name>_<author>` 而宿主是 `<name>.<author>`，安装态被误判成调试态
+    // ⇒ `app://debug/rdp.chenzhi/…` 被协议侧拒成 404 not found（见 lib/appUrl.mjs 的注释）
+    url: appPageUrl(import.meta.url, { page: PAGE_PATH }),
     multiOpen: false,
     width: 1024,
     height: 720
